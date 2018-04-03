@@ -131,7 +131,7 @@ public abstract class AbstractActionTask implements Runnable {
 
         this.log = AtsDbLogger.getLogger(this.getClass().getName());
 
-        PassiveDbAppender dbAppender = PassiveDbAppender.getCurrentInstance(ThreadsPerCaller.getCaller());
+        PassiveDbAppender dbAppender = PassiveDbAppender.getCurrentInstance();
         if (dbAppender != null) {
             this.isLoggingInBatchMode = dbAppender.isBatchMode();
         }

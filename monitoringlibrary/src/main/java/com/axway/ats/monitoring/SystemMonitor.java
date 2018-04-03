@@ -306,7 +306,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_SYSTEM_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling system monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule system monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -334,7 +335,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule system monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -513,7 +515,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_JVM_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling jvm monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule JVM monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -553,7 +556,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_CUSTOM_JVM_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling custom jvm monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule custom JVM monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -595,7 +599,8 @@ public class SystemMonitor {
                                                              "There were errors while starting monitoring",
                                                              new Object[]{ null,
                                                                            pollingInterval,
-                                                                           System.currentTimeMillis() });
+                                                                           System.currentTimeMillis() },
+                                                             "Start monitoring");
             if (errorMessage != null) {
                 errorsMessages.add(errorMessage);
             }
@@ -627,7 +632,8 @@ public class SystemMonitor {
                                                          RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                          RestHelper.STOP_MONITORING_RELATIVE_URI,
                                                          "There were errors while stopping monitoring",
-                                                         new Object[]{ null });
+                                                         new Object[]{ null },
+                                                         "Stop monitoring");
             if (!StringUtils.isNullOrEmpty(errorMsg)) {
                 throw new MonitoringException(errorMsg);
             }
@@ -724,7 +730,8 @@ public class SystemMonitor {
                                                                         : "",
                                   logLevel,
                                   appenderConfiguration.getMaxNumberLogEvents(),
-                                  System.currentTimeMillis() });
+                                  System.currentTimeMillis() },
+                    "Initialize DB connection");
 
         this.restHelpers.put(monitoredHost, helper);
 
@@ -737,7 +744,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.INITIALIZE_MONITORING_RELATIVE_URI,
                                                      "There were errors while initializing monitoring",
-                                                     new Object[]{ null });
+                                                     new Object[]{ null },
+                                                     "Initialize monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -755,7 +763,8 @@ public class SystemMonitor {
                                                      "There were errors while joining testcase",
                                                      new Object[]{ null,
                                                                    testCaseState.getRunId(),
-                                                                   testCaseState.getTestcaseId() });
+                                                                   testCaseState.getTestcaseId() },
+                                                     "Join testcase");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -768,7 +777,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_CONFIGURATION_REST_SERVICE_URI,
                                                      RestHelper.LEAVE_TESTCASE_RELATIVE_URI,
                                                      "There were errors while leaving testcase",
-                                                     new Object[]{ null });
+                                                     new Object[]{ null },
+                                                     "Leave testcase");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -804,7 +814,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_PROCESS_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling process monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule process monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -829,7 +840,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_CHILD_PROCESS_MONITORING_RELATIVE_URI,
                                                      "There were errors while scheduling child process monitoring",
-                                                     values);
+                                                     values,
+                                                     "Schedule parent process monitoring");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -844,7 +856,8 @@ public class SystemMonitor {
                                                      RestHelper.BASE_MONITORING_REST_SERVICE_URI,
                                                      RestHelper.SCHEDULE_USER_ACTIVITY_RELATIVE_URI,
                                                      "There were errors while scheduling user activity",
-                                                     values);
+                                                     values,
+                                                     "Schedule user activity");
         if (!StringUtils.isNullOrEmpty(errorMsg)) {
             throw new MonitoringException(errorMsg);
         }
@@ -860,13 +873,14 @@ public class SystemMonitor {
                                                String baseUri,
                                                String relativeUri,
                                                String errorMessage,
-                                               Object[] values ) {
+                                               Object[] values,
+                                               String description) {
 
         RestHelper helper = null;
         RestResponse response = null;
         try {
             helper = this.restHelpers.get(monitoredHost);
-            response = helper.post(monitoredHost, baseUri, relativeUri, values);
+            response = helper.post( monitoredHost, baseUri, relativeUri, values, description );
 
             if (response.getStatusCode() >= 400) {
                 log.error(errorMessage + " on '" + monitoredHost + "'");

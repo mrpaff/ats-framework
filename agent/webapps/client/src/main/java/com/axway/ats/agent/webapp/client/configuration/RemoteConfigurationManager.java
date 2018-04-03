@@ -50,7 +50,7 @@ public class RemoteConfigurationManager {
                                    Configurator configurator ) throws AgentException {
 
         // get the client instance
-        AgentService agentServicePort = AgentServicePool.getInstance().getClient(atsAgent);
+        AgentService agentServicePort = AgentServicePool.getInstance().getClientForHost(atsAgent);
 
         List<Configurator> configurators = new ArrayList<Configurator>();
         configurators.add(configurator);
