@@ -71,6 +71,8 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
     private static final String      MSG__TEST_SKIPPED_UNRECOGNIZED_REASON = "[TestNG]: TEST SKIPPED due to unrecognized failure";
 
     private final String             JAVA_FILE_EXTENSION                   = ".java";
+    
+    private static Integer 			 BEFORE_METHOD_INDEX 				   = 0;
 
     private String                   javaFileContent;
     private String                   projectSourcesFolder;
@@ -157,7 +159,7 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
                 if( channel.currentTestcaseName == null ) {
 
                     // start testcase
-                    startTestcase( channel, testResult );
+                    startTestcase( channel, testResult, true );
 
                 }
 
@@ -204,7 +206,7 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
                 if( channel.currentTestcaseName == null ) {
 
                     // start testcase
-                    startTestcase( channel, testResult );
+                    startTestcase( channel, testResult, false );
                 } else {
 
                     // update testcase
@@ -452,7 +454,7 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
 
     }
 
-    private void startTestcase( Channel channel, ITestResult testResult ) {
+    private void startTestcase( Channel channel, ITestResult testResult, boolean isBeforeMethod ) {
 
         Class<?> testClass = testResult.getTestClass().getRealClass();
 
@@ -468,7 +470,15 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
         //clear the last saved testcase result, since a new testcase is about to start
         channel.lastTestcaseResult = -1;
 
-        // start test case
+		// start test case
+		if (isBeforeMethod) {
+			// in parallel tests we do not know the test name in the before method
+			// and all the tests are inserted in the database with the same name( the before method name )
+			// we have to add unique index after the before method name, so we can distinguish the different test cases
+			synchronized (BEFORE_METHOD_INDEX) {
+				testName = testName + "_" + BEFORE_METHOD_INDEX++;
+			}
+		}
         logger.startTestcase( suiteFullName, suiteSimpleName, testName, testInputArguments, testDescription );
         addScenarioMetainfo( testResult );
 
@@ -753,7 +763,7 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
         //Check if the test was successfully started, if not - make it started and then end it with failure
         String testName = testResult.getMethod().toString();
         if( !testName.equals( channel.currentTestcaseName ) ) {
-            startTestcase( channel, testResult );
+            startTestcase( channel, testResult, false );
         }
 
         sendTestEndEventToAgents();
@@ -782,7 +792,7 @@ public class AtsTestngListener implements ISuiteListener, IInvokedMethodListener
             //Check if the test was successfully started, if not - make it started and then end it with failure
             String testName = testResult.getMethod().toString();
             if( !testName.equals( channel.currentTestcaseName ) ) {
-                startTestcase( channel, testResult );
+                startTestcase( channel, testResult, false );
             }
 
             sendTestEndEventToAgents();
