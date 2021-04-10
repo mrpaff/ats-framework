@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2019 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -17,10 +17,10 @@ package com.axway.ats.log.autodb.model;
 
 import java.sql.SQLException;
 
-import org.apache.log4j.Layout;
+import org.apache.logging.log4j.core.Layout;
 
-import com.axway.ats.log.autodb.LogEventRequest;
 import com.axway.ats.log.autodb.exceptions.LoggingException;
+import com.axway.ats.log.autodb.logqueue.LogEventRequest;
 
 /**
  * All classes that process a logging event should implement this interface

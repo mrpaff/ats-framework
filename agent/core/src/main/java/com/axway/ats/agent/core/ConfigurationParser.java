@@ -34,7 +34,8 @@ import javax.xml.validation.Schema;
 import javax.xml.validation.SchemaFactory;
 import javax.xml.validation.Validator;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -50,6 +51,7 @@ import com.axway.ats.core.dbaccess.DatabaseProviderFactory;
 import com.axway.ats.core.dbaccess.DbConnection;
 import com.axway.ats.core.dbaccess.oracle.DbConnOracle;
 import com.axway.ats.core.utils.IoUtils;
+import com.axway.ats.core.utils.StringUtils;
 import com.axway.ats.environment.AdditionalAction;
 import com.axway.ats.environment.EnvironmentUnit;
 import com.axway.ats.environment.database.DatabaseEnvironmentUnit;
@@ -101,7 +103,7 @@ public class ConfigurationParser {
     /**
      * The logger for this class.
      */
-    private static final Logger        log                             = Logger.getLogger(ConfigurationParser.class);
+    private static final Logger        log                             = LogManager.getLogger(ConfigurationParser.class);
 
     /**
      * The document supposed to be parsed.
@@ -361,6 +363,14 @@ public class ConfigurationParser {
 
             if (dbChildNode.getNodeName().equals(TABLE)) {
                 String tableName = dbChildNode.getAttributes().getNamedItem("name").getNodeValue();
+                String schemaName = new String();
+                String[] tableNames = tableName.split("\\.");
+                if(!StringUtils.isNullOrEmpty(tableName) && tableNames.length > 1) {
+                    // Note that if the table name contains dot (.), even if the table name is escaped properly, according to the database server,
+                    // we will consider the presence of dot as a sign that the table names is of the format <schema_name>.<table_name>
+                    schemaName = tableNames[0];
+                    tableName = tableNames[1];
+                }
 
                 String[] columnsToExclude = {};
                 if (dbChildNode.getAttributes().getNamedItem("columnsToExclude") != null) {
@@ -370,7 +380,7 @@ public class ConfigurationParser {
                                                   .split(",");
                 }
 
-                DbTable dbTable = null;
+                DbTable dbTable = new DbTable(tableName, schemaName, Arrays.asList(columnsToExclude));
                 // parse db table 'lock' attribute
                 if (dbChildNode.getAttributes().getNamedItem("lock") != null) {
 
@@ -384,15 +394,24 @@ public class ConfigurationParser {
                                                   .getNodeValue()
                                                   .trim();
                     if ("false".equalsIgnoreCase(nodeValue) || "true".equalsIgnoreCase(nodeValue)) {
-                        dbTable = new DbTable(tableName, Arrays.asList(columnsToExclude),
-                                              Boolean.parseBoolean(nodeValue));
+                        dbTable.setLockTable(Boolean.parseBoolean(nodeValue));
                     } else {
                         log.warn("Invalid db table 'lock' attribute value '" + nodeValue
                                  + "'. Valid values are 'true' and 'false'. The default value 'true' will be used.");
                     }
-                }
-                if (dbTable == null) {
-                    dbTable = new DbTable(tableName, Arrays.asList(columnsToExclude));
+                } 
+            	if (dbChildNode.getAttributes().getNamedItem("drop") != null) {
+
+                    String nodeValue = dbChildNode.getAttributes()
+                                                  .getNamedItem("drop")
+                                                  .getNodeValue()
+                                                  .trim();
+                    if ("false".equalsIgnoreCase(nodeValue) || "true".equalsIgnoreCase(nodeValue)) {
+                        dbTable.setDropTable(Boolean.parseBoolean(nodeValue));
+                    } else {
+                        log.warn("Invalid db table 'drop' attribute value '" + nodeValue
+                                 + "'. Valid values are 'true' and 'false'. The default value 'false' will be used.");
+                    }
                 }
 
                 // parse db table 'autoIncrementResetValue' attribute

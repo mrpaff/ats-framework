@@ -20,7 +20,8 @@ import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.InputStream;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.action.ActionLibraryConfigurator;
 import com.axway.ats.action.objects.model.PackageException;
@@ -39,7 +40,7 @@ import com.axway.ats.harness.config.MessagesBox;
 @PublicAtsApi
 public class PackageLoader {
 
-    private static final Logger log = Logger.getLogger(PackageLoader.class);
+    private static final Logger log = LogManager.getLogger(PackageLoader.class);
 
     /**
      * Private constructor to prevent instantiation
@@ -112,6 +113,7 @@ public class PackageLoader {
         return new MimePackage(loadPackageFromFile(fileName));
     }
 
+    // Why MySQL?!?
     private static InputStream loadPackageFromDb(
                                                   int packageId,
                                                   String messagesHost,
@@ -138,10 +140,10 @@ public class PackageLoader {
             return packageContent;
         } catch (DbRecordsException dbre) {
             throw new PackageException("Package with id '" + packageId
-                                       + "' does not exist in 'messages' DB");
+                                       + "' does not exist in 'messages' DB", dbre);
         } catch (DbException dbe) {
             throw new PackageException("Could not get package with id '" + packageId
-                                       + "' from the 'messages' DB");
+                                       + "' from the 'messages' DB", dbe);
         }
     }
 
@@ -153,7 +155,7 @@ public class PackageLoader {
             FileInputStream fileStream = new FileInputStream(packageFile);
             return fileStream;
         } catch (FileNotFoundException fnfe) {
-            throw new PackageException("Package '" + fileName + "' does not exist");
+            throw new PackageException("Package '" + fileName + "' does not exist", fnfe);
         }
     }
 }

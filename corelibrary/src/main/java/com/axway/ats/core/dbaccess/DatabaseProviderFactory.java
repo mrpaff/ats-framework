@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -23,7 +23,8 @@ import java.util.Enumeration;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.w3c.dom.Document;
 import org.w3c.dom.NamedNodeMap;
 import org.w3c.dom.Node;
@@ -36,6 +37,8 @@ import com.axway.ats.core.dbaccess.cassandra.DbConnCassandra;
 //import com.axway.ats.core.dbaccess.db2.Db2DbProvider;
 //import com.axway.ats.core.dbaccess.db2.DbConnDb2;
 import com.axway.ats.core.dbaccess.exceptions.DbException;
+import com.axway.ats.core.dbaccess.mariadb.DbConnMariaDB;
+import com.axway.ats.core.dbaccess.mariadb.MariaDbDbProvider;
 import com.axway.ats.core.dbaccess.mssql.DbConnSQLServer;
 import com.axway.ats.core.dbaccess.mssql.MssqlDbProvider;
 import com.axway.ats.core.dbaccess.mysql.DbConnMySQL;
@@ -43,7 +46,7 @@ import com.axway.ats.core.dbaccess.mysql.MysqlDbProvider;
 import com.axway.ats.core.dbaccess.oracle.DbConnOracle;
 import com.axway.ats.core.dbaccess.oracle.OracleDbProvider;
 import com.axway.ats.core.dbaccess.postgresql.DbConnPostgreSQL;
-import com.axway.ats.core.dbaccess.postgresql.PostgreSqlProvider;
+import com.axway.ats.core.dbaccess.postgresql.PostgreSqlDbProvider;
 import com.axway.ats.core.reflect.AmbiguousMethodException;
 import com.axway.ats.core.reflect.MethodFinder;
 import com.axway.ats.core.utils.XmlUtils;
@@ -53,7 +56,7 @@ import com.axway.ats.core.utils.XmlUtils;
  */
 public class DatabaseProviderFactory {
 
-    private static final Logger          log                         = Logger.getLogger(DatabaseProviderFactory.class);
+    private static final Logger          log                         = LogManager.getLogger(DatabaseProviderFactory.class);
 
     private static Map<String, String[]> dbProviders                 = null;
 
@@ -189,15 +192,21 @@ public class DatabaseProviderFactory {
                 break;
 
             case DbConnPostgreSQL.DATABASE_TYPE:
-                dbProvider = new PostgreSqlProvider((DbConnPostgreSQL) createDbConnection(dbType, dbHost, dbPort,
-                                                                                          dbName, dbUser, dbPass,
-                                                                                          customProperties));
+                dbProvider = new PostgreSqlDbProvider((DbConnPostgreSQL) createDbConnection(dbType, dbHost, dbPort,
+                                                                                            dbName, dbUser, dbPass,
+                                                                                            customProperties));
                 break;
 
             case DbConnMySQL.DATABASE_TYPE:
                 dbProvider = new MysqlDbProvider((DbConnMySQL) createDbConnection(dbType, dbHost, dbPort,
                                                                                   dbName, dbUser, dbPass,
                                                                                   customProperties));
+                break;
+
+            case DbConnMariaDB.DATABASE_TYPE:
+                dbProvider = new MariaDbDbProvider((DbConnMariaDB) createDbConnection(dbType, dbHost, dbPort,
+                                                                                      dbName, dbUser, dbPass,
+                                                                                      customProperties));
                 break;
 
             case DbConnOracle.DATABASE_TYPE:
@@ -295,6 +304,8 @@ public class DatabaseProviderFactory {
      *            the type of the database
      * @param host
      *            the host to connect to
+     * @param port
+     *            the port to connect to
      * @param database
      *            the database name
      * @param user
@@ -328,6 +339,9 @@ public class DatabaseProviderFactory {
         switch (dbType) {
             case DbConnMySQL.DATABASE_TYPE: {
                 return new DbConnMySQL(host, port, database, user, password, customProperties);
+            }
+            case DbConnMariaDB.DATABASE_TYPE: {
+                return new DbConnMariaDB(host, port, database, user, password, customProperties);
             }
             case DbConnSQLServer.DATABASE_TYPE: {
                 return new DbConnSQLServer(host, port, database, user, password, customProperties);

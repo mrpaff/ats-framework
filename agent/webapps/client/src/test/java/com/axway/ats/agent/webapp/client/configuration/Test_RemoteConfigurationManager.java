@@ -34,7 +34,6 @@ import com.axway.ats.agent.core.exceptions.AgentException;
 import com.axway.ats.agent.webapp.client.AgentException_Exception;
 import com.axway.ats.agent.webapp.client.AgentService;
 import com.axway.ats.agent.webapp.client.AgentServicePool;
-import com.axway.ats.agent.webapp.client.configuration.RemoteConfigurationManager;
 import com.axway.ats.core.AtsVersion;
 import com.axway.ats.junit.BaseTestWebapps;
 
@@ -64,7 +63,7 @@ public class Test_RemoteConfigurationManager extends BaseTestWebapps {
         replayAll();
 
         new RemoteConfigurationManager().pushConfiguration("10.0.0.2",
-                                                           new RemoteLoggingConfigurator());
+                                                           new RemoteLoggingConfigurator(null, -1));
 
         // verify results
         verifyAll();
@@ -85,7 +84,7 @@ public class Test_RemoteConfigurationManager extends BaseTestWebapps {
         replayAll();
 
         new RemoteConfigurationManager().pushConfiguration("10.0.0.3",
-                                                           new RemoteLoggingConfigurator());
+                                                           new RemoteLoggingConfigurator(null, -1));
 
         // verify results
         verifyAll();
@@ -102,7 +101,7 @@ public class Test_RemoteConfigurationManager extends BaseTestWebapps {
         replayAll();
 
         new RemoteConfigurationManager().pushConfiguration("10.0.0.3",
-                                                           new RemoteLoggingConfigurator());
+                                                           new RemoteLoggingConfigurator(null, -1));
 
         // verify results
         verifyAll();

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2021 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -47,8 +47,6 @@ import com.axway.ats.core.dbaccess.exceptions.DbException;
 import com.axway.ats.core.dbaccess.oracle.DbConnOracle;
 import com.axway.ats.core.dbaccess.oracle.OracleDbProvider;
 import com.axway.ats.environment.BaseTest;
-import com.axway.ats.environment.database.MysqlEnvironmentHandler;
-import com.axway.ats.environment.database.OracleEnvironmentHandler;
 import com.axway.ats.environment.database.exceptions.ColumnHasNoDefaultValueException;
 import com.axway.ats.environment.database.exceptions.DatabaseEnvironmentCleanupException;
 import com.axway.ats.environment.database.model.DbTable;
@@ -56,7 +54,7 @@ import com.axway.ats.environment.database.model.DbTable;
 public class Test_OracleEnvironmentHandler extends BaseTest {
 
     private static final String LINE_SEPARATOR = AtsSystemProperties.SYSTEM_LINE_SEPARATOR;
-    private static final String EOL_MARKER     = MysqlEnvironmentHandler.EOL_MARKER;
+    private static final String EOL_MARKER     = AbstractEnvironmentHandler.EOL_MARKER;
 
     private DbConnOracle        mockDbConnection;
     private OracleDbProvider    mockDbProvider;
@@ -121,12 +119,17 @@ public class Test_OracleEnvironmentHandler extends BaseTest {
 
         //foreign keys check start
         mockFileWriter.write("SET CONSTRAINTS ALL DEFERRED;" + EOL_MARKER + LINE_SEPARATOR);
+        
+        // lock table1
+        mockFileWriter.write("LOCK TABLE table1 IN EXCLUSIVE MODE NOWAIT;" + EOL_MARKER + LINE_SEPARATOR);
 
         //table1
         mockFileWriter.write("DELETE FROM table1;" + EOL_MARKER + LINE_SEPARATOR);
         mockFileWriter.write("INSERT INTO table1(name1,name2,name3) VALUES ('value1',NULL,'"
                              + new String(new char[]{ 1 }) + "');" + EOL_MARKER + LINE_SEPARATOR);
-
+        // lock table2
+        mockFileWriter.write("LOCK TABLE table2 IN EXCLUSIVE MODE NOWAIT;" + EOL_MARKER + LINE_SEPARATOR);
+        
         //table2
         mockFileWriter.write("DELETE FROM table2;" + EOL_MARKER + LINE_SEPARATOR);
         mockFileWriter.write("INSERT INTO table2(name1,name2,name3) VALUES ('value1',NULL,'"
@@ -155,7 +158,7 @@ public class Test_OracleEnvironmentHandler extends BaseTest {
 
         List<String> columnsToSkip = new ArrayList<String>();
         columnsToSkip.add("name2");
-        DbTable table2 = new DbTable("table2", columnsToSkip);
+        DbTable table2 = new DbTable("table2", "dbo", columnsToSkip);
 
         //the columns meta data
         DbRecordValuesList column1MetaData = new DbRecordValuesList();
@@ -206,10 +209,16 @@ public class Test_OracleEnvironmentHandler extends BaseTest {
         //foreign keys check start
         mockFileWriter.write("SET CONSTRAINTS ALL DEFERRED;" + EOL_MARKER + LINE_SEPARATOR);
 
+        // lock table1
+        mockFileWriter.write("LOCK TABLE table1 IN EXCLUSIVE MODE NOWAIT;" + EOL_MARKER + LINE_SEPARATOR);
+        
         //table1
         mockFileWriter.write("DELETE FROM table1;" + EOL_MARKER + LINE_SEPARATOR);
         mockFileWriter.write("INSERT INTO table1(name1,name2,name3) VALUES ('value1',NULL,'"
                              + new String(new char[]{ 5 }) + "');" + EOL_MARKER + LINE_SEPARATOR);
+
+        // lock table2
+        mockFileWriter.write("LOCK TABLE table2 IN EXCLUSIVE MODE NOWAIT;" + EOL_MARKER + LINE_SEPARATOR);
 
         //table2
         mockFileWriter.write("DELETE FROM table2;" + EOL_MARKER + LINE_SEPARATOR);
@@ -320,7 +329,7 @@ public class Test_OracleEnvironmentHandler extends BaseTest {
         DbTable table1 = new DbTable("table1");
         List<String> columnsToSkip = new ArrayList<String>();
         columnsToSkip.add("name2");
-        DbTable table2 = new DbTable("table2", columnsToSkip);
+        DbTable table2 = new DbTable("table2", "dbo", columnsToSkip);
 
         //the columns meta data
         DbRecordValuesList column1MetaData = new DbRecordValuesList();

@@ -23,6 +23,13 @@ import com.axway.ats.log.autodb.exceptions.DatabaseAccessException;
 public interface IDbWriteAccess {
 
     /**
+     * Specify max number of events to be collected for batch mode.
+     * <p>Should be invoked before any insert event is invoked.</p>
+     * @param maxNumberOfCachedEvents
+     */
+    public void setMaxNumberOfCachedEvents( int maxNumberOfCachedEvents );
+
+    /**
      * Insert a new run in the database
      *
      * @param runName
@@ -96,6 +103,9 @@ public interface IDbWriteAccess {
     public void addScenarioMetainfo( int testcaseId, String metaKey, String metaValue,
                                      boolean closeConnection ) throws DatabaseAccessException;
 
+    public void addTestcaseMetainfo( int testcaseId, String metaKey, String metaValue,
+                                     boolean closeConnection ) throws DatabaseAccessException;
+
     public void clearScenarioMetainfo(
                                        int scenarioId,
                                        boolean closeConnection ) throws DatabaseAccessException;
@@ -162,9 +172,9 @@ public interface IDbWriteAccess {
 
                                          int numRunning, int numPassed, int numFailed,
 
-                                         int minResponseTime, float avgResponseTime, int maxResponseTime,
+                                         int minResponseTime, double avgResponseTime, int maxResponseTime,
 
-                                         float minTransferRate, float avgTransferRate, float maxTransferRate,
+                                         double minTransferRate, double avgTransferRate, double maxTransferRate,
                                          String transferRateUnit, int loadQueueId,
                                          boolean closeConnection ) throws DatabaseAccessException;
 

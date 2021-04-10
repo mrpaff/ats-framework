@@ -22,7 +22,8 @@ import java.net.URL;
 import java.util.Date;
 import java.util.Set;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.By;
 import org.openqa.selenium.Cookie;
 import org.openqa.selenium.JavascriptExecutor;
@@ -62,7 +63,7 @@ import com.gargoylesoftware.htmlunit.html.HtmlPage;
 @PublicAtsApi
 public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtmlEngine {
 
-    private static Logger log = Logger.getLogger(AbstractHtmlEngine.class);
+    private static Logger log = LogManager.getLogger(AbstractHtmlEngine.class);
 
     private WebDriver     webDriver;
 
@@ -182,10 +183,22 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
         } else {
 
             log.info("Go to window/tab with title/name '" + windowTitle + "'");
-            switchToWindowByTitle(windowTitle, timeoutInSeconds);
+            switchToWindowByTitle(windowTitle, timeoutInSeconds, false);
         }
     }
 
+    /**
+     * Go to window/tab with same title. Note that order of same titled windows is not guaranteed. 
+     * @param timeoutInSeconds timeout (in seconds) for waiting the target window to appear
+     */
+    @PublicAtsApi
+    public void goToAnotherWindow(long timeoutInSeconds ) {
+
+        final String windowTitle = webDriver.getTitle();
+        log.info("Go to another window/tab with title/name '" + windowTitle + "'");
+        switchToWindowByTitle(windowTitle, timeoutInSeconds, true);
+    }
+    
     /**
      * Go to main window/tab
      */
@@ -201,18 +214,17 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
     @PublicAtsApi
     public void goToFirstWindowWithoutTitle() {
 
-        switchToWindowByTitle("", UiEngineConfigurator.getInstance().getElementStateChangeDelay());
+        switchToWindowByTitle("", UiEngineConfigurator.getInstance().getElementStateChangeDelay(), false);
     }
 
     private void switchToWindowByTitle(
-                                        final String windowTitle,
-                                        long timeoutInSeconds ) {
+                                        final String windowTitle, long timeoutInSeconds, final boolean checkForNotCurrentWindow) {
 
         ExpectedCondition<Boolean> expectation = new ExpectedCondition<Boolean>() {
             public Boolean apply(
                                   WebDriver driver ) {
 
-                return switchToWindowByTitle(windowTitle);
+                return switchToWindowByTitle(windowTitle, checkForNotCurrentWindow);
             }
         };
         Wait<WebDriver> wait = new WebDriverWait(webDriver, timeoutInSeconds);
@@ -224,10 +236,15 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
         }
     }
 
+    /**
+     * 
+     * @param searchTitle window title to match
+     * @param checkForNotCurrentWindow - if true makes sure that new window is not current one
+     * @return
+     */
     private boolean switchToWindowByTitle(
-                                           String title ) {
+                                           String searchTitle, boolean checkForNotCurrentWindow ) {
 
-        String currentWindow = webDriver.getWindowHandle();
         Set<String> availableWindows = webDriver.getWindowHandles();
         if (!availableWindows.isEmpty()) {
             /*
@@ -241,21 +258,35 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
              * The returned Set by Selenium is an actual LinkedHashSet<String> so it is ordered indeed.
              */
             String[] availableWindowsArray = availableWindows.toArray(new String[availableWindows.size()]);
+            if (searchTitle != null ) {
+                searchTitle = searchTitle.trim();
+            }
+            String initialWindowId = webDriver.getWindowHandle();
 
             for (int i = availableWindowsArray.length - 1; i >= 0; i--) {
-                String windowId = availableWindowsArray[i];
-                String windowTitle = webDriver.switchTo().window(windowId).getTitle();
-                if ( (windowTitle == null && (title == null || title.isEmpty()))
-                     || (windowTitle != null && windowTitle.trim().equalsIgnoreCase(title.trim()))) {
-                    return true;
+                String winId = availableWindowsArray[i];
+                String windowTitle = webDriver.switchTo().window(winId).getTitle();
+                if (checkForNotCurrentWindow && winId.equals(initialWindowId)) {
+                    // skip - initial window found
                 } else {
-                    webDriver.switchTo().window(currentWindow);
+                    if ( windowTitle == null && (searchTitle == null || searchTitle.isEmpty()) ) { 
+                            return true;
+                    } else if (windowTitle == null || (windowTitle != null && searchTitle == null)) {
+                        // skip - no match
+                    } else  { // windowTitle !=null && title != null
+                        if ( windowTitle.trim().equalsIgnoreCase(searchTitle) ) {
+                            return true;
+                        }
+                    }
                 }
+                // no match - new iteration     
+                webDriver.switchTo().window(initialWindowId);
+                    
             }
         }
         return false;
-
     }
+    
 
     /**
      * Close the active window/tab
@@ -427,10 +458,10 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
     /**
      * <pre>
      * Gets the result of evaluating the specified JavaScript command. The command/snippet may have multiple lines,
-     * but only the result of the last line will be returned. <br/>
+     * but only the result of the last line will be returned. <br>
      *
      * Note that, by default, the command will run in the context of the "selenium" object itself,
-     * so <b>this</b> will refer to the Selenium object. <br/>
+     * so <b>this</b> will refer to the Selenium object. <br>
      * Use <b>window</b> to refer to the window of your application,
      *  e.g. <i>var fooEl = window.document.getElementById('foo'); fooEl.name;</i>
      * </pre>
@@ -455,7 +486,7 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
     }
 
     /**
-     * Returns the number of HTML elements that match the specified xpath<br/>
+     * Returns the number of HTML elements that match the specified xpath<br>
      *  eg. "//table" would give the number of tables
      *
      * @param xpath the xpath expression to evaluate
@@ -477,7 +508,7 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
     }
 
     /**
-     * Returns the number of HTML elements that match the specified css selector<br/>
+     * Returns the number of HTML elements that match the specified css selector<br>
      *  eg. "//table" would give the number of tables
      *
      * @param cssSelector the css selector expression to evaluate
@@ -559,7 +590,7 @@ public abstract class AbstractHtmlEngine extends AbstractEngine implements IHtml
     }
 
     /**
-     * Delete the named cookie from the current domain.<br/>
+     * Delete the named cookie from the current domain.<br>
      * This is equivalent to setting the named cookie's expiration date to some time in the past.
      *
      * @param cookieName the name of the cookie. May not be null or an empty string.

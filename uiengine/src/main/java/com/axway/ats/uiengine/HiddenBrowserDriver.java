@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2019 Axway Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ import java.io.IOException;
 import java.lang.reflect.Field;
 import java.net.URL;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.WebDriver.TargetLocator;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
 
@@ -41,16 +42,17 @@ import com.gargoylesoftware.htmlunit.util.Cookie;
 import com.gargoylesoftware.htmlunit.util.WebConnectionWrapper;
 
 /**
- * A driver operating over
- * <a href="http://htmlunit.sourceforge.net/">HTML Unit</a> browser
+ * A non-visual Web driver operating over
+ * <a href="http://htmlunit.sourceforge.net/">HTML Unit</a> browser.
+ * Using Selenium <a href="https://github.com/SeleniumHQ/htmlunit-driver">htmlunit-driver</a> WebDriver.
  *
- * <br/>
- * This is a headless(no UI) browser.
+ * <br>
+ * This is a headless (no UI) browser.
  */
 @PublicAtsApi
 public class HiddenBrowserDriver extends AbstractHtmlDriver {
 
-    private static Logger      log                    = Logger.getLogger(HiddenBrowserDriver.class);
+    private static Logger      log                    = LogManager.getLogger(HiddenBrowserDriver.class);
 
     public static final String ALLOW_META_REFRESH_TAG = "htmlunit.allow.meta.refresh.tag";
 
@@ -67,7 +69,7 @@ public class HiddenBrowserDriver extends AbstractHtmlDriver {
     protected HiddenBrowserDriver( String url ) {
 
         this.url = url;
-        this.browserVersion = BrowserVersion.FIREFOX_45;
+        this.browserVersion = BrowserVersion.FIREFOX_60;
     }
 
     protected HiddenBrowserDriver( String url, BrowserVersion browserVersion ) {
@@ -98,7 +100,7 @@ public class HiddenBrowserDriver extends AbstractHtmlDriver {
 
         fixHtmlUnitBehaviour();
 
-        log.info("Openning URL: " + url);
+        log.info("Opening URL: " + url);
         webDriver.get(url);
     }
 

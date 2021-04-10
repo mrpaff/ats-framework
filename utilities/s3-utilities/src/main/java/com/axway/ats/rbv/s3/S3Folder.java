@@ -21,7 +21,8 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.action.s3.S3ObjectInfo;
 import com.axway.ats.action.s3.S3Operations;
@@ -35,7 +36,7 @@ import com.axway.ats.rbv.storage.Matchable;
 
 public class S3Folder implements Matchable {
 
-    private static final Logger       log = Logger.getLogger(S3Folder.class);
+    private static final Logger       log = LogManager.getLogger(S3Folder.class);
 
     private boolean                   isOpen;
     private String                    path;
@@ -94,7 +95,7 @@ public class S3Folder implements Matchable {
 
         //first check if the folder is already open
         if (!isOpen) {
-            throw new MatchableNotOpenException("File system folder is not open");
+            throw new MatchableNotOpenException("S3 folder is not open");
         }
 
         newMetaData.clear();

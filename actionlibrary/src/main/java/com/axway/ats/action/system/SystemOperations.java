@@ -27,7 +27,9 @@ import javax.management.remote.JMXConnector;
 import javax.management.remote.JMXConnectorFactory;
 import javax.management.remote.JMXServiceURL;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.PublicAtsApi;
 import com.axway.ats.common.system.OperatingSystemType;
@@ -43,7 +45,7 @@ import com.axway.ats.core.validation.Validator;
  * Operations on the OS level like getting OS type, get/set time, get classpath and
  * perform keyboard/mouse operations.
  *
- * <br/>
+ * <br>
  * <p>User guide page related to this class is
  * <a href="https://axway.github.io/ats-framework/Basic-System-Operations.html">here</a>
  * </p>
@@ -53,7 +55,7 @@ public class SystemOperations {
 
     private String  atsAgent;
 
-    private Logger  log      = Logger.getLogger(SystemOperations.class);
+    private Logger  log      = LogManager.getLogger(SystemOperations.class);
 
     @PublicAtsApi
     public Mouse    mouse    = new Mouse();
@@ -100,7 +102,7 @@ public class SystemOperations {
     }
 
     /**
-     * Get the value of the environment's system property.<br/>
+     * Get the value of the environment's system property.<br>
      *
      * It calls internally System.getProperty("property name");
      *
@@ -190,7 +192,7 @@ public class SystemOperations {
     }
 
     /**
-     * Creates screenshot image file.<br/>
+     * Creates screenshot image file.<br>
      * The currently supported image formats/types are PNG, JPG, JPEG, GIF and BMP
      *
      * @param filePath the screenshot image file path. If the file extension is not specified, the default format PNG will be used
@@ -322,6 +324,32 @@ public class SystemOperations {
         ISystemOperations operations = getOperationsImplementationFor(atsAgent);
         return operations.getHostname();
 
+    }
+
+    /**
+     * Attach file appender to the Root logger
+     * @param filepath Path/to/logFile. Can be absolute or relative
+     * @param messageFormatPattern The layout/format of the log messages. For more information see {@link PatternLayout}.
+     *                            If not sure what to use, use this one:<br>
+     * <strong><code>%-5p %d{HH:mm:ss:SSS} %c{2}: %m%n</code></strong>
+     */
+    public void attachFileAppender( @Validate( name = "filepath", type = ValidationType.NOT_NULL) String filepath,
+                                    @Validate( name = "layout", type = ValidationType.NOT_NULL) String messageFormatPattern ) {
+
+        ISystemOperations operations = getOperationsImplementationFor(atsAgent);
+        operations.attachFileAppender(filepath, messageFormatPattern);
+    }
+
+    /**
+     * Set the threshold for the ATS DB Appender
+     * @param threshold - the threshold ( Level.INFO|DEBUG,etc )
+     * */
+    @PublicAtsApi
+    public void
+            setAtsDbAppenderThreshold( @Validate( name = "threshold", type = ValidationType.NOT_NULL) Level threshold ) {
+
+        ISystemOperations operations = getOperationsImplementationFor(atsAgent);
+        operations.setAtsDbAppenderThreshold(threshold);
     }
 
     private ISystemOperations getOperationsImplementationFor(

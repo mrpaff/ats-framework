@@ -18,13 +18,14 @@ package com.axway.ats.uiengine.utilities.hiddenbrowser;
 import java.io.IOException;
 import java.lang.reflect.Method;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.WebDriverException;
 import org.openqa.selenium.htmlunit.HtmlUnitDriver;
 import org.openqa.selenium.htmlunit.HtmlUnitKeyboard;
 import org.openqa.selenium.htmlunit.HtmlUnitMouse;
 import org.openqa.selenium.htmlunit.HtmlUnitWebElement;
-import org.openqa.selenium.interactions.internal.Coordinates;
+import org.openqa.selenium.interactions.Coordinates;
 
 import com.axway.ats.common.PublicAtsApi;
 import com.gargoylesoftware.htmlunit.ScriptException;
@@ -35,7 +36,7 @@ import com.gargoylesoftware.htmlunit.html.HtmlInput;
 @PublicAtsApi
 public class HiddenHtmlElementUtils {
 
-    private static Logger log = Logger.getLogger(HiddenHtmlElementUtils.class);
+    private static Logger log = LogManager.getLogger(HiddenHtmlElementUtils.class);
 
     @PublicAtsApi
     public static void mouseClick(
@@ -48,6 +49,8 @@ public class HiddenHtmlElementUtils {
         Method updateActiveElementMethod = null;
         boolean updateActiveElementMethodAccessible = false;
         try {
+            // Allow invoking click on non-visible elements. Prevents HtmlUnit check for currently visible element
+            // TODO: remove this possibility by removing UiEngineConfigurator#workWithInvisibleElements()
             // change access modifiers of some methods
             getElementForOperationMethod = HtmlUnitMouse.class.getDeclaredMethod("getElementForOperation",
                                                                                  Coordinates.class);
@@ -105,7 +108,7 @@ public class HiddenHtmlElementUtils {
 
             throw new RuntimeException(e);
         } finally {
-
+            // Restore accessibility modifier
             if (getElementForOperationMethod != null) {
                 getElementForOperationMethod.setAccessible(getElementForOperationMethodAccessible);
             }

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2021 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -37,20 +37,33 @@ import java.util.Map;
 
 import javax.imageio.ImageIO;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.Filter;
+import org.apache.logging.log4j.core.Filter.Result;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.AbstractAppender;
+import org.apache.logging.log4j.core.appender.FileAppender;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.filter.ThresholdFilter;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 
 import com.axway.ats.common.system.OperatingSystemType;
 import com.axway.ats.common.system.SystemOperationException;
 import com.axway.ats.core.AtsVersion;
 import com.axway.ats.core.process.LocalProcessExecutor;
+import com.axway.ats.core.reflect.ReflectionUtils;
 import com.axway.ats.core.system.model.ISystemInputOperations;
 import com.axway.ats.core.system.model.ISystemOperations;
+import com.axway.ats.core.threads.ThreadsPerCaller;
 import com.axway.ats.core.utils.ClasspathUtils;
 import com.axway.ats.core.utils.HostUtils;
 
 public class LocalSystemOperations implements ISystemOperations {
 
-    private static final Logger                  log                         = Logger.getLogger(LocalSystemOperations.class);
+    private static final Logger                  log                         = LogManager.getLogger(LocalSystemOperations.class);
 
     private static final String                  DATE_FORMAT                 = "MM/dd/yy HH:mm:ss";
 
@@ -176,9 +189,9 @@ public class LocalSystemOperations implements ISystemOperations {
     }
 
     /**
-     * Creates display screenshot and save it in an image file.<br/>
-     * The currently supported image formats/types are PNG, JPG, JPEG, GIF and BMP<br/>
-     * <br/>
+     * Creates display screenshot and save it in an image file.<br>
+     * The currently supported image formats/types are PNG, JPG, JPEG, GIF and BMP<br>
+     * <br>
      * <b>NOTE:</b> For remote usage, the filePath value must be only the image file extension eg. ".PNG"
      *
      * @param filePath the screenshot image file path. If the file extension is not specified, the default format PNG will be used
@@ -302,6 +315,81 @@ public class LocalSystemOperations implements ISystemOperations {
     public void logDuplicatedJars() {
 
         new ClasspathUtils().logProblematicJars();
+    }
+
+    public void setAtsDbAppenderThreshold( Level threshold ) {
+
+        final LoggerContext context = LoggerContext.getContext(false);
+        final Configuration config = context.getConfiguration();
+        Map<String, Appender> appenders = config.getAppenders();
+        // there is a method called -> context.getConfiguration().getAppender(java.lang.String name)
+        // maybe we should use this one to obtain Active and Passive DB appenders?
+        if (appenders != null && appenders.size() > 0) {
+            for (Map.Entry<String, Appender> entry : appenders.entrySet()) {
+                Appender appender = entry.getValue();
+                if (appender != null) {
+                    if (appender.getClass().getName().equals("com.axway.ats.log.appenders.ActiveDbAppender")) {
+                        // assume that only ATS is going to attach filter to this appender
+                        // so remove the previous one and attach the new one
+                        if ( ((AbstractAppender) appender).hasFilter()) {
+                            Filter currentFilter = ((AbstractAppender) appender).getFilter();
+                            if (currentFilter != null) {
+                                ((AbstractAppender) appender).removeFilter(currentFilter);
+                            }
+                        }
+                        ((AbstractAppender) appender).addFilter(ThresholdFilter.createFilter(threshold, Result.ACCEPT,
+                                                                                             Result.DENY));
+                    }
+                    if (appender.getClass().getName().equals("com.axway.ats.log.appenders.PassiveDbAppender")) {
+                        String callerId = ThreadsPerCaller.getCaller();
+                        String passiveDbAppenderCaller = (String) ReflectionUtils.getFieldValue(appender, "caller",
+                                                                                                true);
+                        if (callerId != null && callerId.equals(passiveDbAppenderCaller)) {
+                            // assume that only ATS is going to attach filter to this appender
+                            // so remove the previous one and attach the new one
+                            if ( ((AbstractAppender) appender).hasFilter()) {
+                                Filter currentFilter = ((AbstractAppender) appender).getFilter();
+                                if (currentFilter != null) {
+                                    ((AbstractAppender) appender).removeFilter(currentFilter);
+                                }
+                            }
+                            ((AbstractAppender) appender).addFilter(ThresholdFilter.createFilter(threshold,
+                                                                                                 Result.ACCEPT,
+                                                                                                 Result.DENY));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    public void attachFileAppender( String filepath, String messageFormatPattern ) {
+
+        try {
+            PatternLayout patternLayout = PatternLayout.newBuilder().withPattern(messageFormatPattern).build();
+            final LoggerContext context = LoggerContext.getContext(false);
+            final Configuration config = context.getConfiguration();
+
+            // this name may get too long
+            String name = "file-appender-" + ThreadsPerCaller.getCaller() + filepath.replace("\\", "_");
+
+            //TODO: a check should be made that such appender exists
+            
+            FileAppender fileAppender = FileAppender.newBuilder()
+                                                    .setName(name)
+                                                    .setLayout(patternLayout)
+                                                    .withFileName(filepath)
+                                                    .build();
+
+            fileAppender.start();
+            config.addAppender(fileAppender);
+            // context.getRootLogger().addAppender(config.getAppender(fa.getName())); Is this needed?!?
+            context.updateLoggers();
+
+        } catch (Exception e) {
+            throw new RuntimeException("Could not attach file appender '" + filepath + "'", e);
+        }
+
     }
 
     /**
@@ -618,4 +706,5 @@ public class LocalSystemOperations implements ISystemOperations {
 
         PNG, JPG, JPEG, GIF, BMP;
     }
+
 }

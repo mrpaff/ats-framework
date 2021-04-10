@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,10 +34,11 @@ public class BaseRestServiceImpl {
      * and is discarded again when initializing DB connection if it has expired.
     */
 
-    /** skip test for checking if ActiveDbAppender is presented in test executor's log4j.xml **/
-    private AtsDbLogger                       dbLog    = AtsDbLogger.getLogger(BaseRestServiceImpl.class.getName(), true);
+    /** skip test for checking if ActiveDbAppender is presented in test executor's log4j2.xml **/
+    private AtsDbLogger                       dbLog    = AtsDbLogger.getLogger(BaseRestServiceImpl.class.getName(),
+                                                                               true);
 
-    protected static Map<String, SessionData> sessions = Collections.synchronizedMap(new HashMap<String, SessionData>());
+    public static Map<String, SessionData> sessions = Collections.synchronizedMap(new HashMap<String, SessionData>());
 
     protected String getCaller(
                                 HttpServletRequest request,
@@ -65,13 +66,21 @@ public class BaseRestServiceImpl {
         uid = getUid(request, basePojo, false);
         sd = sessions.get(uid);
         if (sd == null) {
-            if (request.getRequestURI().contains("initializeDbConnection")) {
+            /*
+             * new Session (SessionData) is created when:
+             * <ul>
+             * <li>initializeDbConnection is called - this is done, when monitoring is requested by REST API</li>
+             * <li>initializeMonitoring is called - this is done when the ATS Framework is sending a system monitoring operation</li> 
+             * </ul>
+             *  
+             * */
+            if (request.getRequestURI().contains("initializeDbConnection") || request.getRequestURI().contains("initializeMonitoring")) {
                 // create new session
                 sd = new SessionData();
                 sessions.put(uid, sd);
             } else {
                 throw new SessionNotFoundException("Could not obtain session with uid '" + uid
-                                                   + "'. Please consult the documentation.");
+                                                   + "'. It is possible that the agent had been restarted so no sessions are available");
             }
         }
         sd.updateLastUsedFlag();

@@ -92,7 +92,8 @@ import org.apache.http.impl.cookie.BasicClientCookie;
 import org.apache.http.protocol.HttpContext;
 import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.ssl.SSLContexts;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.w3c.dom.Document;
 
 import com.axway.ats.action.ActionLibraryConfigurator;
@@ -277,7 +278,7 @@ public class HttpClient {
      */
     boolean                           isChain                         = false;
 
-    private static final Logger       log                             = Logger.getLogger(HttpClient.class);
+    private static final Logger       log                             = LogManager.getLogger(HttpClient.class);
 
     /**
      * Constructor.
@@ -322,9 +323,9 @@ public class HttpClient {
     }
 
     /**
-     * Add one or more values for one request(query) parameter.<br/><br/>
+     * Add one or more values for one request(query) parameter.<br><br>
      *
-     * The following example adds a language request parameter:<br/>
+     * The following example adds a language request parameter:<br>
      * http://example.com/?language=eng
      *
      * @param name the parameter name
@@ -341,9 +342,9 @@ public class HttpClient {
     }
 
     /**
-     * Add a list of values for one request(query) parameter</br></br>
+     * Add a list of values for one request(query) parameter<br><br>
      *
-     * The following example adds a language request parameter:</br>
+     * The following example adds a language request parameter:<br>
      * http://example.com/?language=eng
      *
      * @param name the parameter name
@@ -356,7 +357,7 @@ public class HttpClient {
     }
 
     /**
-     * Add one or more request(query) parameters<br/><br/>
+     * Add one or more request(query) parameters<br><br>
      *
      * @param requestParameters a {@link Map} of parameters. Each parameter has a {@link List} of one or more values.
      */
@@ -369,7 +370,7 @@ public class HttpClient {
     }
 
     /**
-     * Remove a request(also called query) parameter<br/></br/>
+     * Remove a request(also called query) parameter<br></br/>
      *
      * @param name the name of the parameter
      */
@@ -392,7 +393,7 @@ public class HttpClient {
     }
 
     /**
-     * Remove one or more request(also called query) parameters<br/></br/>
+     * Remove one or more request(also called query) parameters<br></br/>
      *
      * @param names the names of the parameters
      */
@@ -432,7 +433,7 @@ public class HttpClient {
 
     /**
      * If the URI is not fully specified in the constructor,
-     * you can navigate to an internal resource.</br>
+     * you can navigate to an internal resource.<br>
      * For example you can pass:
      * <ul>
      *   <li>"company"</li>
@@ -510,7 +511,7 @@ public class HttpClient {
     }
 
     /**
-     * Set the request HTTP media type.</br>
+     * Set the request HTTP media type.<br>
      * This is a shortcut method for setting the value of the "Content-Type" header.
      */
     @PublicAtsApi
@@ -905,7 +906,7 @@ public class HttpClient {
     }
 
     /**
-     * This method is used to create a multipart body. </br>
+     * This method is used to create a multipart body. <br>
      * For single body messages the different <i>setRequestBody</i> methods should be used.
      *
      * @param part the part to add to the body of the HTTP request

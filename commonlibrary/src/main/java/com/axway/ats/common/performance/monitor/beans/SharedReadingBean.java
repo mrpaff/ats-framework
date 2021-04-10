@@ -19,7 +19,8 @@ import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.util.Locale;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * Shares some data between different reading types.
@@ -28,7 +29,7 @@ public class SharedReadingBean extends ReadingBean {
 
     private static final long          serialVersionUID = 1L;
 
-    private Logger                     log              = Logger.getLogger(this.getClass());
+    private Logger                     log              = LogManager.getLogger(this.getClass());
 
     // format the given float CPU usage values, output 4 digits after decimal point
     // which are later multiplied by 100
@@ -57,7 +58,7 @@ public class SharedReadingBean extends ReadingBean {
      * Invalid double values set to "-1.0"
      *
      * @param value double value
-     * @return the double value if it is >= 0 and is not NaN or Infinite, else returns -1
+     * @return the double value if it is &gt;= 0 and is not NaN or Infinite, else returns -1
      */
     protected double fixDoubleValue(
                                      double value ) {
@@ -75,7 +76,7 @@ public class SharedReadingBean extends ReadingBean {
      * Invalid double percent values set to "-0.01"
      *
      * @param value double value
-     * @return the double value if it is >= 0 and is not NaN or Infinite, else returns -0.01
+     * @return the double value if it is &gt;= 0 and is not NaN or Infinite, else returns -0.01
      */
     protected float fixDoubleValueInPercents(
                                               double value ) {
@@ -94,7 +95,7 @@ public class SharedReadingBean extends ReadingBean {
      * Negative long values set to "-1"
      * 
      * @param value long value
-     * @return the long value if it is >= 0, else returns -1
+     * @return the long value if it is &gt;= 0, else returns -1
      */
     protected long fixLongValue(
                                  long value ) {

@@ -40,8 +40,6 @@ import com.axway.ats.common.dbaccess.DbKeys;
 import com.axway.ats.common.dbaccess.OracleKeys;
 import com.axway.ats.common.system.OperatingSystemType;
 import com.axway.ats.common.systemproperties.AtsSystemProperties;
-import com.axway.ats.core.dbaccess.DbConnection;
-import com.axway.ats.core.dbaccess.oracle.DbConnOracle;
 import com.axway.ats.core.utils.IoUtils;
 import com.axway.ats.environment.EnvironmentUnit;
 import com.axway.ats.environment.database.DatabaseEnvironmentUnit;
@@ -505,6 +503,16 @@ public class Test_ConfigurationParser extends BaseTest {
         } finally {
             simulateOS( currentOs );
         }
+    }
+    
+    @Test
+    public void testDB_dropTable() throws Exception {
+
+        InputStream _descriptorFileStream = Test_ConfigurationParser.class.getClassLoader()
+                                                                          .getResourceAsStream( "test_descriptors/test_agent_descriptor.xml" );
+
+        ConfigurationParser configParser = new ConfigurationParser();
+        configParser.parse( _descriptorFileStream, jarFileAbsolutePath );
     }
 
     @Test

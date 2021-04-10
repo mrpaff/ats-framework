@@ -51,6 +51,7 @@ public class JsonMonitoringUtils {
 
     public static final String[] INITIALIZE_DB_CONNECTION_KEYS           = new String[]{ "uid",
                                                                                          "dbHost",
+                                                                                         "dbPort",
                                                                                          "dbName",
                                                                                          "dbUser",
                                                                                          "dbPass",
@@ -61,7 +62,8 @@ public class JsonMonitoringUtils {
 
     public static final String[] JOIN_TESTCASE_KEYS                      = new String[]{ "uid",
                                                                                          "runId",
-                                                                                         "testcaseId" };
+                                                                                         "testcaseId",
+                                                                                         "lastExecutedTestcaseId" };
 
     public static final String[] SCHEDULE_SYSTEM_MONITORING_KEYS         = new String[]{ "uid", "readings" };
 
@@ -202,20 +204,20 @@ public class JsonMonitoringUtils {
         }
 
         for (int i = 0; i < keys.length; i++) {
-            String key = keys[i];
+            String key = keys[i].replace("\"", "\\\"");
             sb.append("\"").append(key).append("\"").append(": ");
             Object value = values[i];
             if (value == null) {
                 sb.append(value);
             } else {
                 if (value instanceof String) {
-                    sb.append("\"").append((String) value).append("\"");
+                    sb.append("\"").append( ((String) value).replace("\"", "\\\"")).append("\"");
                 } else if (value instanceof Number) {
                     sb.append((Number) value);
                 } else if (value instanceof String[]) {
                     sb.append("[");
                     for (String obj : (String[]) value) {
-                        sb.append("\"").append(obj).append("\"").append(",");
+                        sb.append("\"").append(obj.replace("\"", "\\\"")).append("\"").append(",");
                     }
                     sb = new StringBuilder(sb.subSequence(0, sb.length() - 1));
                     sb.append("]");
@@ -259,7 +261,7 @@ public class JsonMonitoringUtils {
                               .append("\"")
                               .append(":")
                               .append("\"")
-                              .append(mapEntry.getValue())
+                              .append(mapEntry.getValue().replace("\"", "\\\""))
                               .append("\"");
                             sb.append("},");
                         }

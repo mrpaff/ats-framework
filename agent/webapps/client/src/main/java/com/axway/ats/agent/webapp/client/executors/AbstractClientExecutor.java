@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2019 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -27,9 +27,9 @@ import com.axway.ats.agent.core.threading.data.config.LoaderDataConfig;
 import com.axway.ats.agent.core.threading.patterns.ThreadingPattern;
 import com.axway.ats.log.AtsDbLogger;
 import com.axway.ats.log.appenders.ActiveDbAppender;
-import com.axway.ats.log.autodb.DbAccessFactory;
-import com.axway.ats.log.autodb.SQLServerDbWriteAccess;
 import com.axway.ats.log.autodb.exceptions.DatabaseAccessException;
+import com.axway.ats.log.autodb.io.DbAccessFactory;
+import com.axway.ats.log.autodb.io.SQLServerDbWriteAccess;
 
 public abstract class AbstractClientExecutor implements ClientExecutor {
 
@@ -105,7 +105,7 @@ public abstract class AbstractClientExecutor implements ClientExecutor {
                                        threadingPattern.getThreadCount());
         } catch (DatabaseAccessException e) {
             if (ActiveDbAppender.getCurrentInstance() == null) {
-                // The log4j DB appender is not attached
+                // The log4j2 DB appender is not attached
                 // We assume the user is running a performance test without DB logging
                 log.warn("Unable to register a performance queue with name '" + queueName
                          + "' in the loggging database."

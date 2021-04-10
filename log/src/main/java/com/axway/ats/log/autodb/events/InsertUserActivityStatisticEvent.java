@@ -15,7 +15,8 @@
  */
 package com.axway.ats.log.autodb.events;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.log.autodb.model.LoggingEventType;
 import com.axway.ats.log.autodb.model.TestCaseLoggingEvent;
@@ -48,7 +49,7 @@ public class InsertUserActivityStatisticEvent extends TestCaseLoggingEvent {
                                              String statisticValues,
                                              long timestamp ) {
 
-        super(loggerFQCN, logger, "Insert system statistic", LoggingEventType.INSERT_USER_ACTIVITY_STAT);
+        super(loggerFQCN, logger, "Insert user activity statistic " + statisticIds +"|"+ statisticValues, LoggingEventType.INSERT_USER_ACTIVITY_STAT);
 
         this.monitoredMachine = monitoredMachine;
         this.statisticIds = statisticIds;

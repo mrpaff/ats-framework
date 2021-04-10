@@ -28,7 +28,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.openqa.selenium.Alert;
 import org.openqa.selenium.Dimension;
 import org.openqa.selenium.JavascriptExecutor;
@@ -36,11 +37,12 @@ import org.openqa.selenium.NoAlertPresentException;
 import org.openqa.selenium.Proxy;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.chrome.ChromeOptions;
+import org.openqa.selenium.edge.EdgeOptions;
 import org.openqa.selenium.firefox.FirefoxDriver;
 import org.openqa.selenium.firefox.FirefoxOptions;
 import org.openqa.selenium.firefox.FirefoxProfile;
-import org.openqa.selenium.firefox.internal.ProfilesIni;
-
+import org.openqa.selenium.firefox.ProfilesIni;
+import org.openqa.selenium.ie.InternetExplorerOptions;
 import org.openqa.selenium.phantomjs.PhantomJSDriverService;
 import org.openqa.selenium.remote.CapabilityType;
 import org.openqa.selenium.remote.DesiredCapabilities;
@@ -80,7 +82,7 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
 
     }
 
-    private static Logger         log                 = Logger.getLogger(AbstractRealBrowserDriver.class);
+    private static Logger         log                 = LogManager.getLogger(AbstractRealBrowserDriver.class);
 
     private String                url;
     private String                browserPath;
@@ -118,8 +120,9 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
     }
 
     /**
+     * @param browserType The Browser kind. Check {@link BrowserType}
      * @param url the target application URL
-     * @param browserStartCommand command for starting a real UI browser or the remote selenium hub URL (eg. http://10.11.12.13:4444/wd/hub/)
+     * @param browserPath full path to a real UI browser or the remote selenium hub URL (eg. http://10.11.12.13:4444/wd/hub/)
      */
     public AbstractRealBrowserDriver( BrowserType browserType,
                                       String url,
@@ -135,8 +138,9 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
     }
 
     /**
+     * @param browserType The Browser kind. Check {@link BrowserType}
      * @param url the target application URL
-     * @param browserStartCommand command for starting a real UI browser
+     * @param browserPath full path to a real UI browser
      * @param remoteSeleniumURL the remote selenium hub URL (eg. http://10.11.12.13:4444/wd/hub/)
      */
     public AbstractRealBrowserDriver( BrowserType browserType,
@@ -218,23 +222,33 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
 
             else if (browserType == BrowserType.InternetExplorer) {
 
+                InternetExplorerOptions options = UiEngineConfigurator.getInstance().getInternetExplorerDriverOptions();
+                if (options == null) {
+                    options = new InternetExplorerOptions(DesiredCapabilities.internetExplorer());
+                }
+
                 if (this.remoteSeleniumURL != null) {
 
                     webDriver = new RemoteWebDriver(new URL(this.remoteSeleniumURL),
-                                                    DesiredCapabilities.internetExplorer());
+                                                    options);
                 } else {
-                    webDriver = new org.openqa.selenium.ie.InternetExplorerDriver();
+                    webDriver = new org.openqa.selenium.ie.InternetExplorerDriver(options);
                 }
             }
 
             else if (browserType == BrowserType.Edge) {
 
+                EdgeOptions options = UiEngineConfigurator.getInstance().getEdgeDriverOptions();
+                if (options == null) {
+                    options = new EdgeOptions().merge(DesiredCapabilities.edge());
+                }
+
                 if (this.remoteSeleniumURL != null) {
 
                     webDriver = new RemoteWebDriver(new URL(this.remoteSeleniumURL),
-                                                    DesiredCapabilities.edge());
+                                                    options);
                 } else {
-                    webDriver = new org.openqa.selenium.edge.EdgeDriver();
+                    webDriver = new org.openqa.selenium.edge.EdgeDriver(options);
                 }
             }
 
@@ -338,7 +352,7 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
                 }
             }
 
-            log.info("Openning URL: " + url);
+            log.info("Opening URL: " + url);
             webDriver.get(url);
             if (this instanceof com.axway.ats.uiengine.PhantomJsDriver) {
                 webDriver.manage().window().setSize(new Dimension(1280, 1024));
@@ -383,65 +397,6 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
         }
     }
 
-    private Map<String, String> extractPhantomJSCapabilityValues(
-                                                                  String capabiliesString ) {
-
-        Map<String, String> capabilities = new HashMap<String, String>();
-        if (capabiliesString.indexOf('{') > -1) {
-
-            // there are multiple capabilities in format:  {cap 1: value 1}, {cap 2 : value 2}
-            Pattern multipleCapablitiesPattern = Pattern.compile("\\{\\s*([^:]+)\\s*:\\s*([^\\}]+)\\},?");
-            Matcher matcher = multipleCapablitiesPattern.matcher(capabiliesString);
-            while (matcher.find()) {
-                capabilities.put(matcher.group(1).trim(), matcher.group(2).trim());
-            }
-        } else {
-
-            capabilities.put(capabiliesString.substring(0, capabiliesString.indexOf(':')).trim(),
-                             capabiliesString.substring(capabiliesString.indexOf(':') + 1).trim());
-        }
-        return capabilities;
-    }
-
-    private void setFirefoxProxyIfAvailable(
-                                             DesiredCapabilities capabilities ) {
-
-        if (!StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST)
-            && !StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT)) {
-
-            capabilities.setCapability(CapabilityType.PROXY,
-                                       new Proxy().setHttpProxy(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST
-                                                                + ':'
-                                                                + AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT));
-        }
-    }
-
-    private void setPhantomJSProxyIfAvailable(
-                                               List<String> cliArgsCapabilities ) {
-
-        if (!StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST)
-            && !StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT)) {
-
-            cliArgsCapabilities.add("--proxy=" + AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST + ":"
-                                    + AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT);
-            // cliArgsCap.add("--proxy-auth=username:password");
-            // cliArgsCap.add("--proxy-type=http");
-        }
-    }
-
-    // private void waitPageToLoad(
-    // int timeout ) {
-    //
-    // long endLoadTime = System.currentTimeMillis() + timeout;
-    // while( System.currentTimeMillis() - endLoadTime < 0 ) {
-    // if( this.seleniumBrowser.isElementPresent( "//body" ) ) {
-    // return;
-    // }
-    // UiEngineUtilities.sleep( 200 );
-    // }
-    //        throw new SeleniumOperationException( "Html application did not load within " + timeout + " ms" );
-    // }
-
     @Override
     @PublicAtsApi
     public void stop() {
@@ -455,7 +410,7 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
             new File(PhantomJsDriver.cookiesFile).delete();
         }
 
-        log.info("Stoping selenium browser with " + this.getClass().getSimpleName());
+        log.info("Stopping selenium browser with " + this.getClass().getSimpleName());
         webDriver.quit();
     }
 
@@ -606,4 +561,55 @@ public abstract class AbstractRealBrowserDriver extends AbstractHtmlDriver {
             throw new ElementNotFoundException(e);
         }
     }
+    
+
+    private void setFirefoxProxyIfAvailable(
+                                             DesiredCapabilities capabilities ) {
+
+        if (!StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST)
+            && !StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT)) {
+
+            capabilities.setCapability(CapabilityType.PROXY,
+                                       new Proxy().setHttpProxy(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST
+                                                                + ':'
+                                                                + AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT));
+        }
+    }
+
+    @Deprecated
+    private void setPhantomJSProxyIfAvailable(
+                                               List<String> cliArgsCapabilities ) {
+
+        if (!StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST)
+            && !StringUtils.isNullOrEmpty(AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT)) {
+
+            cliArgsCapabilities.add("--proxy=" + AtsSystemProperties.SYSTEM_HTTP_PROXY_HOST + ":"
+                                    + AtsSystemProperties.SYSTEM_HTTP_PROXY_PORT);
+            // cliArgsCap.add("--proxy-auth=username:password");
+            // cliArgsCap.add("--proxy-type=http");
+        }
+    }
+
+    @Deprecated
+    private Map<String, String> extractPhantomJSCapabilityValues(
+                                                                 String capabiliesString ) {
+
+       Map<String, String> capabilities = new HashMap<String, String>();
+       if (capabiliesString.indexOf('{') > -1) {
+
+           // there are multiple capabilities in format:  {cap 1: value 1}, {cap 2 : value 2}
+           Pattern multipleCapablitiesPattern = Pattern.compile("\\{\\s*([^:]+)\\s*:\\s*([^\\}]+)\\},?");
+           Matcher matcher = multipleCapablitiesPattern.matcher(capabiliesString);
+           while (matcher.find()) {
+               capabilities.put(matcher.group(1).trim(), matcher.group(2).trim());
+           }
+       } else {
+
+           capabilities.put(capabiliesString.substring(0, capabiliesString.indexOf(':')).trim(),
+                            capabiliesString.substring(capabiliesString.indexOf(':') + 1).trim());
+       }
+       return capabilities;
+   }
+
+
 }

@@ -30,7 +30,8 @@ import java.util.NoSuchElementException;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.amazonaws.AmazonClientException;
 import com.amazonaws.AmazonServiceException;
@@ -44,6 +45,7 @@ import com.amazonaws.services.s3.AmazonS3;
 import com.amazonaws.services.s3.AmazonS3ClientBuilder;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest;
 import com.amazonaws.services.s3.model.DeleteObjectsRequest.KeyVersion;
+import com.amazonaws.services.s3.model.DeleteObjectsResult;
 import com.amazonaws.services.s3.model.ListObjectsRequest;
 import com.amazonaws.services.s3.model.MultiObjectDeleteException;
 import com.amazonaws.services.s3.model.ObjectListing;
@@ -69,7 +71,7 @@ import com.axway.ats.core.utils.IoUtils;
 @PublicAtsApi
 public class S3Operations {
 
-    private static final Logger LOG = Logger.getLogger(S3Operations.class);
+    private static final Logger LOG = LogManager.getLogger(S3Operations.class);
 
     private String              accessKey;
     private String              secretKey;
@@ -157,6 +159,17 @@ public class S3Operations {
     }
 
     /**
+     * Delete all objects with keys having this prefix.
+     * Directory (object with this exact key) is not removed
+     * 
+     * @param prefixName the common key prefix of all objects for removal
+     */
+    @PublicAtsApi
+    public void deleteAll( String prefixName ) {
+        deleteObjects(prefixName, ".*", true);
+    }
+    
+    /**
      * Delete object
      * @param object name/key of the object to be deleted
      */
@@ -199,21 +212,91 @@ public class S3Operations {
     }
 
     /**
+     * Delete all objects matching given prefix. This method is preferred for efficient deletion of many files
+     * 
+     * @param folderPrefix empty path is expected for objects in the "root" of the bucket 
+     * @param searchString what pattern to be matched. This pattern will be matched against "short file name", i.e. 
+     *                     the object's ID after last path separator (&quot;/&quot;).<br />
+     *                     If null it means all ( string &quot;.*&quot;). 
+     * @param recursive if true searches recursively for matching in nested path levels (&quot;/&quot;)
+     * 
+     * @return list of deleted objects
+     * @throws S3OperationException in case of an error from server
+     */
+    @PublicAtsApi
+    public void deleteObjects( String folderPrefix, String searchString, boolean recursive ) {
+
+        //Alternative but not documented in S3 API: getClient().listObjectsV2(bucket, "prefix")
+        ListObjectsRequest request = new ListObjectsRequest(bucketName, folderPrefix, null, recursive
+                                                                                                      ? null
+                                                                                                      : "/",
+                                                            null);
+        int totallyDeleted = 0;
+        try {
+            ObjectListing objectListing = s3Client.listObjects(request);
+            int i = 0;
+            if (searchString == null) {
+                searchString = ".*"; // any string
+            }
+            List<KeyVersion> keysForDelete = new ArrayList<KeyVersion>(100);
+            Pattern searchStringPattern = Pattern.compile(searchString);
+            while (true) {
+                keysForDelete.clear();
+                for (Iterator<?> iterator = objectListing.getObjectSummaries().iterator(); iterator.hasNext();) {
+                    S3ObjectSummary objectSummary = (S3ObjectSummary) iterator.next();
+                    if (LOG.isTraceEnabled()) {
+                        LOG.trace("listObject[" + (++i) + "]: " + objectSummary.toString());
+                    }
+
+                    String[] fileTokens = objectSummary.getKey().split("/");
+                    String s3Object = fileTokens[fileTokens.length - 1];
+
+                    Matcher matcher = searchStringPattern.matcher(s3Object);
+                    if (matcher.find()) {
+                        keysForDelete.add(new KeyVersion(objectSummary.getKey()));
+                        //allListElements.add(new S3ObjectInfo(objectSummary));
+                    }
+                }
+                if (keysForDelete.size() > 0) {
+                    // delete current set / batch size
+                    DeleteObjectsRequest multiObjectDeleteRequest = new DeleteObjectsRequest(bucketName).withKeys(keysForDelete)
+                                                                                                        .withQuiet(false);
+                    DeleteObjectsResult delObjRes = s3Client.deleteObjects(multiObjectDeleteRequest);
+                    int currentlyDeletedCount = delObjRes.getDeletedObjects().size();
+                    totallyDeleted = totallyDeleted + currentlyDeletedCount;
+
+                    // verify size of deleted objects
+                    if (keysForDelete.size() != currentlyDeletedCount) {
+                        LOG.warn("The number of actually deleted objects " + currentlyDeletedCount +
+                                 " does not match the expected size of " + keysForDelete.size());
+                    } else {
+                        LOG.debug("Number of deleted S3 objects in current batch is " + currentlyDeletedCount);
+                    }
+                }
+
+                // more objects to retrieve (1K batch size of objects)
+                if (objectListing.isTruncated()) {
+                    objectListing = s3Client.listNextBatchOfObjects(objectListing);
+                } else {
+                    break;
+                }
+            }
+            LOG.info("Successfully deleted " + totallyDeleted + " objects");
+        } catch (AmazonClientException e) {
+            throw new S3OperationException("Error deleting multiple objects matching pattern " + searchString 
+                                           + ". Number of deleted objects is " + totallyDeleted, e);
+        } 
+    }
+
+    /**
      * Delete the bucket specified in constructor
      *
      * @throws S3OperationException in case of a client or server error
      */
     @PublicAtsApi
     public void deleteBucket() throws S3OperationException {
-
-        List<String> keys = new ArrayList<String>();
-        for (S3ObjectInfo s3Element : listBucket("" /* all */, ".*", true)) {
-            keys.add(s3Element.getName());
-        }
-
-        // remove all Objects before deleting the bucket
-        deleteObjects(keys);
-
+        deleteObjects("", ".*", true); // empty bucket is needed before bucket delete operation
+        
         try {
             s3Client.deleteBucket(bucketName);
         } catch (Exception e) {
@@ -382,7 +465,7 @@ public class S3Operations {
     }
 
     /**
-     * Upload a file with metadata.
+     * Upload object data directly from stream.
      *
      * @param targetObjectName the name of the file that will be uploaded
      * @param sourceInputStream the InputStream of the data that should be uploaded. It might be closed after reading.
@@ -479,25 +562,6 @@ public class S3Operations {
         } catch (Exception e) {
             handleExeption(e, "S3 object move error");
         }
-    }
-
-    /**
-     * Delete all objects with keys having this prefix.
-     * Directory (object with this exact key) is not removed
-     * 
-     * @param prefixName the common key prefix of all objects for removal
-     */
-    @PublicAtsApi
-    public void deleteAll( String prefixName ) {
-
-        List<String> folderElements = new ArrayList<String>();
-        // remove all Objects in the pointed directory
-        for (S3ObjectInfo element : listBucket(prefixName, ".*", true)) {
-            if (!element.getName().equals(prefixName))
-                folderElements.add(element.getName());
-        }
-
-        deleteObjects(folderElements);
     }
 
     /**

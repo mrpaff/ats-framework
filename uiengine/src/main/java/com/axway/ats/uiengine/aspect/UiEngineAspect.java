@@ -18,7 +18,8 @@ package com.axway.ats.uiengine.aspect;
 import java.lang.reflect.Array;
 import java.util.Arrays;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.aspectj.lang.JoinPoint;
 import org.aspectj.lang.annotation.Aspect;
 import org.aspectj.lang.annotation.Before;
@@ -40,14 +41,17 @@ public class UiEngineAspect {
         // initialize logger
         Logger log = null;
         if (point.getThis() != null) {
-            log = Logger.getLogger(point.getThis().getClass()); // not a static method
+            log = LogManager.getLogger(point.getThis().getClass()); // not a static method
         } else {
             // in case of MobileButton.click() this method will return MobileElement.class, but not MobileButton.class
             // that is why it is better to use point.getThis().getClass(), but if the method is static point.getThis() is null
-            log = Logger.getLogger(point.getSignature().getDeclaringType());
+            log = LogManager.getLogger(point.getSignature().getDeclaringType());
         }
 
         String methodName = point.getSignature().getName();
+        if (log.isTraceEnabled()) {
+            log.trace("--> Invoked aspect for method " + methodName);
+        }
 
         String propertiesString = " ";
         if (point.getThis() != null) { // not a static method

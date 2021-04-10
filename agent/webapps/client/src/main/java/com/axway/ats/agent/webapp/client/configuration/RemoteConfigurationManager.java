@@ -21,22 +21,21 @@ import java.io.ObjectOutputStream;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.agent.core.configuration.Configurator;
 import com.axway.ats.agent.core.exceptions.AgentException;
-import com.axway.ats.agent.webapp.client.AgentServicePool;
-import com.axway.ats.core.AtsVersion;
-import com.axway.ats.core.utils.HostUtils;
 import com.axway.ats.agent.webapp.client.AgentException_Exception;
 import com.axway.ats.agent.webapp.client.AgentService;
+import com.axway.ats.agent.webapp.client.AgentServicePool;
 
 /**
  * This class is used to send configuration settings to ATS Agent
  */
 public class RemoteConfigurationManager {
 
-    private static Logger log = Logger.getLogger(RemoteConfigurationManager.class);
+    private static Logger log = LogManager.getLogger(RemoteConfigurationManager.class);
 
     /**
      * Push the provided configuration to the remote Agent
@@ -49,8 +48,8 @@ public class RemoteConfigurationManager {
                                    String atsAgent,
                                    Configurator configurator ) throws AgentException {
 
-        AgentConfigurationLandscape.getInstance( atsAgent ).cacheConfigurator( configurator );
-        
+        AgentConfigurationLandscape.getInstance(atsAgent).cacheConfigurator(configurator);
+
         // get the client instance
         AgentService agentServicePort = AgentServicePool.getInstance().getClient(atsAgent);
 
@@ -60,6 +59,8 @@ public class RemoteConfigurationManager {
         String checkServerLogsStr = ". Check server logs for more details.";
         try {
 
+            log.info("Pushing DB log configuration to ATS Agent " + atsAgent + "");
+            
             // serialize the configurators
             ByteArrayOutputStream byteOutStream = new ByteArrayOutputStream();
             ObjectOutputStream objectOutStream = new ObjectOutputStream(byteOutStream);
@@ -67,13 +68,6 @@ public class RemoteConfigurationManager {
 
             // get Agent Version
             String agentVersion = agentServicePort.pushConfiguration(byteOutStream.toByteArray());
-            String atsVersion = AtsVersion.getAtsVersion();
-            if (!atsVersion.equals(agentVersion)) {
-                log.warn("*** ATS WARNING *** You are using ATS version " + atsVersion
-                         + " with ATS agent version " + agentVersion + " located at '"
-                         + HostUtils.getAtsAgentIpAndPort(atsAgent)
-                         + "'. This might cause incompatibility problems!");
-            }
 
             log.info("Successfully set the " + configurator.getDescription() + " on ATS Agent at '"
                      + atsAgent + "'");

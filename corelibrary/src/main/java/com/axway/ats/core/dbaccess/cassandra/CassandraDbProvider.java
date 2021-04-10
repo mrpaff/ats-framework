@@ -26,7 +26,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.dbaccess.DbQuery;
 import com.axway.ats.common.dbaccess.snapshot.TableDescription;
@@ -59,7 +60,7 @@ import com.datastax.driver.core.policies.TokenAwarePolicy;
  */
 public class CassandraDbProvider implements DbProvider {
 
-    private static final Logger log = Logger.getLogger(CassandraDbProvider.class);
+    private static final Logger log = LogManager.getLogger(CassandraDbProvider.class);
 
     private String              dbHost;
     private int                 dbPort;
@@ -279,17 +280,59 @@ public class CassandraDbProvider implements DbProvider {
         } else if (columnTypeName.equals(DataType.Name.TIMEUUID)) {
             object = row.getUUID(columnName);
         } else if (columnTypeName.equals(DataType.Name.BOOLEAN)) {
-            object = row.getBool(columnName);
+            /* By default null values are deserialized to false (False) 
+             * That's why this check is needed, in order to distinguish between null and false values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getBool(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.INT)) {
-            object = row.getInt(columnName);
+            /* By default null values are deserialized to 0
+             * That's why this check is needed, in order to distinguish between null and 0 values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getInt(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.BIGINT)) {
-            object = row.getLong(columnName);
+            /* By default null values are deserialized to 0
+             * That's why this check is needed, in order to distinguish between null and 0 values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getLong(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.FLOAT)) {
-            object = row.getFloat(columnName);
+            /* By default null values are deserialized to 0
+             * That's why this check is needed, in order to distinguish between null and 0 values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getFloat(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.DOUBLE)) {
-            object = row.getDouble(columnName);
+            /* By default null values are deserialized to 0
+             * That's why this check is needed, in order to distinguish between null and 0 values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getDouble(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.COUNTER)) {
-            object = row.getLong(columnName);
+            /* By default null values are deserialized to 0
+             * That's why this check is needed, in order to distinguish between null and 0 values
+             * */
+            if (row.isNull(columnName)) {
+                object = null;
+            } else {
+                object = row.getLong(columnName);
+            }
         } else if (columnTypeName.equals(DataType.Name.DECIMAL)) {
             object = row.getDecimal(columnName);
         } else if (columnTypeName.equals(DataType.Name.TEXT)
@@ -300,15 +343,7 @@ public class CassandraDbProvider implements DbProvider {
         } else if (columnTypeName.equals(DataType.Name.DATE)) {
             object = row.getDate(columnName);
         } else if (columnTypeName.equals(DataType.Name.BLOB)) {
-
-            ByteBuffer data = (ByteBuffer) row.getBytes(columnName);
-            if (data != null) {
-                byte[] result = new byte[data.remaining()];
-                data.get(result);
-                object = result;
-            } else {
-                object = null;
-            }
+            object = row.getBytes(columnName);
         } else if (columnTypeName.equals(DataType.Name.SET)) {
             // this is the class of the set's elements (i.e. for a Set<String>, clazz variable will be equal to String.class)
             Class<?> clazz = new CodecRegistry().codecFor(dataType.getTypeArguments().get(0))

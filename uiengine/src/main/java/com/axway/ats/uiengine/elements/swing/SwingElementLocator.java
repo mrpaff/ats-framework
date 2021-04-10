@@ -48,7 +48,8 @@ import javax.swing.JToggleButton;
 import javax.swing.JTree;
 import javax.swing.text.JTextComponent;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.fest.swing.core.BasicComponentFinder;
 import org.fest.swing.core.BasicRobot;
 import org.fest.swing.core.GenericTypeMatcher;
@@ -86,7 +87,7 @@ import com.axway.ats.uiengine.internal.driver.SwingDriverInternal;
 
 public class SwingElementLocator {
 
-    private static final Logger                                               log           = Logger.getLogger(SwingElementLocator.class);
+    private static final Logger                                               log           = LogManager.getLogger(SwingElementLocator.class);
 
     public static Map<Class<? extends UiElement>, Class<? extends Component>> componentsMap = new HashMap<Class<? extends UiElement>, Class<? extends Component>>();
 
@@ -193,7 +194,7 @@ public class SwingElementLocator {
         SwingDriverInternal driver = (SwingDriverInternal) uiElement.getUiDriver();
         ContainerFixture<? extends Container> containerFixture = driver.getActiveContainerFixture();
 
-        Class<? extends Component> componentClass = null;
+        Class<? extends Component> componentClass;
         String exactClassName = uiElement.getElementProperties().getProperty("class");
         if (exactClassName != null) {
 
@@ -297,7 +298,7 @@ public class SwingElementLocator {
 
             /**
              * In addition to the type check in constructor adds check by other component properties
-             * @param component
+             * @param component other component for comparison
              * @return
              */
             @Override
@@ -441,9 +442,9 @@ public class SwingElementLocator {
     /**
      * Change container by specified name or title.
      * For internal use
-     * @param driver
+     * @param driver Swing driver
      * @param containerProperties property with name inside
-     * @return the {@link ContainerFinxture}
+     * @return the {@link ContainerFixture}
      */
     public static ContainerFixture<?> getContainerFixture(
                                                            SwingDriverInternal driver,
@@ -458,7 +459,7 @@ public class SwingElementLocator {
 
         ContainerFixture<?> containerFixture = driver.getActiveContainerFixture();
         ContainerFixture<?> windowsFixture = driver.getWindowFixture();
-        Robot robot = null;
+        Robot robot;
         if (containerFixture != null) {
             // use the current robot instance
             robot = containerFixture.robot;
@@ -519,8 +520,8 @@ public class SwingElementLocator {
      * For internal use
      * @param driver Swing driver
      * @param windowTitle if null look for any visible window
-     * @param isDialog
-     * @return the {@link ContainerFinxture}
+     * @param isDialog should the search be for dialog windows
+     * @return the {@link ContainerFixture}
      */
     public static WindowFixture<?> getWindowFixture(
                                                      SwingDriverInternal driver,
@@ -528,7 +529,7 @@ public class SwingElementLocator {
                                                      boolean isDialog ) throws ElementNotFoundException {
 
         WindowFixture<?> windowFixture = driver.getWindowFixture();
-        Robot robot = null;
+        Robot robot;
         if (windowFixture != null) {
             // use the current robot instance
             robot = windowFixture.robot;
@@ -613,7 +614,7 @@ public class SwingElementLocator {
                                                 SwingDriverInternal driver ) {
 
         ContainerFixture<?> containerFixture = driver.getActiveContainerFixture();
-        Robot robot = null;
+        Robot robot;
         if (containerFixture != null) {
             // use the current robot instance
             robot = containerFixture.robot;
@@ -700,7 +701,7 @@ public class SwingElementLocator {
                                         Class<?> swingClass ) {
 
                 ContainerFixture<?> containerFixture = driver.getActiveContainerFixture();
-                Robot robot = null;
+                Robot robot;
                 if (containerFixture != null) {
                     // use the current robot instance
                     robot = containerFixture.robot;

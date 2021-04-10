@@ -26,6 +26,7 @@ import java.sql.Statement;
 import com.axway.ats.core.dbaccess.mssql.DbConnSQLServer;
 import com.axway.ats.core.dbaccess.postgresql.DbConnPostgreSQL;
 import com.axway.ats.core.log.AtsConsoleLogger;
+import com.axway.ats.core.utils.ExceptionUtils;
 
 /**
  * Utilities to close Database connection, statement
@@ -52,11 +53,11 @@ public class DbUtils {
             } catch (AbstractMethodError err) {
                 isClosed = false; // no JavaSE 6-compatible driver
             }
-            if (statement != null && !isClosed) {
+            if ( !isClosed ) { // statemnt != null here
                 statement.close();
             }
         } catch (SQLException e) {
-            log.error(getFullSqlException("Could not close SQL statement", e));
+            log.warn(getFullSqlException("Exception while closing SQL statement", e));
         }
     }
 
@@ -68,8 +69,8 @@ public class DbUtils {
                 resultSet.close();
             }
         } catch (SQLException sqle) {
-            String msg = "Error closing resultset connection";
-            log.error(getFullSqlException(msg, sqle));
+            String msg = "Exception while closing ResultSet";
+            log.warn(getFullSqlException(msg, sqle));
         }
     }
 
@@ -79,7 +80,12 @@ public class DbUtils {
         try {
             if (connection != null) {
                 if (connection.isClosed()) {
-                    String msg = "SQL connection is already closed";
+                    String msg = "SQL connection is already closed. ";
+                    if (log.getLog4jLogger().isDebugEnabled()) {
+                        msg += "Location stacktrace follows: \n" + ExceptionUtils.getExceptionMsg(new Throwable());
+                    } else {
+                        msg += "For more information, set the LOG level to DEBUG or TRACE";
+                    }
                     log.warn(msg);
                 } else {
                     connection.close();
@@ -87,7 +93,6 @@ public class DbUtils {
             }
         } catch (SQLException sqle) {
             String msg = "Error closing database connection";
-            // TODO - first print to console on new object and then log4j
             log.error(getFullSqlException(msg, sqle));
         }
     }
@@ -133,9 +138,10 @@ public class DbUtils {
      * @param dbName the database name
      * @param dbUser the database user name used for login
      * @param dbPassword the database password used for login
-     * @return true if MSSQL database is available
+     * @return null if MSSQL database is available, and an Exception if MSSQL database is NOT available
      * */
-    public static boolean isMSSQLDatabaseAvailable( String dbHost, int dbPort, String dbName, String dbUser, String dbPassword ) {
+    public static Exception isMSSQLDatabaseAvailable( String dbHost, int dbPort, String dbName, String dbUser,
+                                                      String dbPassword ) {
 
         Connection sqlConnection = null;
         DbConnSQLServer sqlServerConnection = null;
@@ -153,9 +159,9 @@ public class DbUtils {
                 throw new Exception("Could not fetch the database version from MSSQL database using URL '"
                                     + sqlServerConnection.getURL() + "'");
             }
-            return true;
+            return null;
         } catch (Exception e) {
-            return false;
+            return e;
         } finally {
             closeStatement(ps);
             closeConnection(sqlConnection);
@@ -169,10 +175,10 @@ public class DbUtils {
     * @param dbName the database name
     * @param dbUser the database user name used for login
     * @param dbPassword the database password used for login
-    * @return true if PostgreSQL database is available
+    * @return null if PostgreSQL database is available, and an Exception if PostgreSQL database is NOT available
     * */
-    public static boolean isPostgreSQLDatabaseAvailable( String dbHost, int dbPort, String dbName, String dbUser,
-                                                         String dbPassword ) {
+    public static Exception isPostgreSQLDatabaseAvailable( String dbHost, int dbPort, String dbName, String dbUser,
+                                                           String dbPassword ) {
 
         Connection sqlConnection = null;
         DbConnPostgreSQL postgreConnection = null;
@@ -190,9 +196,9 @@ public class DbUtils {
                 throw new Exception("Could not fetch the database version from PostgreSQL database using URL '"
                                     + postgreConnection.getURL() + "'");
             }
-            return true;
+            return null;
         } catch (Exception e) {
-            return false;
+            return e;
         } finally {
             closeStatement(ps);
             closeConnection(sqlConnection);
@@ -201,18 +207,19 @@ public class DbUtils {
 
     /**
      * Adds single SQLException details and returns reference to the nested one
-     * @param sqle
-     * @param sb
-     * @return
+     * @param sqle exception to get details from
+     * @param sb   where to append current top SQL exception details
+     * @return full details of the current (top level) SQL exception and link to nested one (cause)
      */
     private static SQLException addNestedSqlTrace(
                                                    SQLException sqle,
                                                    StringBuilder sb ) {
 
         sb.append("SQL Exception:");
-        sb.append("\n\tMessage: ").append(sqle.getMessage());
+        // The same is in the stacktrace: sb.append("\n\tMessage: ").append(sqle.getMessage());
         sb.append("\n\tSQL state: ").append(sqle.getSQLState());
         sb.append("\n\tVendor code: ").append(sqle.getErrorCode());
+        sb.append("\n\tMessage and trace: ");
         StringWriter stringWriter = new StringWriter();
         sqle.printStackTrace(new PrintWriter(stringWriter));
         sb.append(stringWriter.toString());

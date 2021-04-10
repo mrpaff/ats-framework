@@ -19,6 +19,7 @@ import java.io.BufferedWriter;
 import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.Writer;
 import java.text.ParseException;
 import java.util.LinkedHashMap;
@@ -26,7 +27,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.dbaccess.DbQuery;
 import com.axway.ats.core.dbaccess.ColumnDescription;
@@ -35,6 +37,7 @@ import com.axway.ats.core.dbaccess.DbProvider;
 import com.axway.ats.core.dbaccess.DbRecordValuesList;
 import com.axway.ats.core.dbaccess.DbReturnModes;
 import com.axway.ats.core.dbaccess.exceptions.DbException;
+import com.axway.ats.core.utils.IoUtils;
 import com.axway.ats.environment.database.exceptions.ColumnHasNoDefaultValueException;
 import com.axway.ats.environment.database.exceptions.DatabaseEnvironmentCleanupException;
 import com.axway.ats.environment.database.model.BackupHandler;
@@ -48,10 +51,11 @@ import com.axway.ats.environment.database.model.RestoreHandler;
  */
 abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandler {
 
-    private static final Logger    log                        = Logger.getLogger(AbstractEnvironmentHandler.class);
-    private static final String    ERROR_CREATING_BACKUP      = "Could not create backup in file ";
+    private static final Logger    log                        = LogManager.getLogger(AbstractEnvironmentHandler.class);
+    protected static final String  ERROR_CREATING_BACKUP      = "Could not create backup in file ";
     protected static final String  ERROR_RESTORING_BACKUP     = "Could not restore backup from file ";
     private static final String    DAMAGED_BACKUP_FILE_SUFFIX = "_damaged";
+    protected static final String  DROP_TABLE_MARKER          = " -- ATS DROP TABLE ";
     protected static final String  EOL_MARKER                 = " -- ATS EOL;";
 
     protected boolean              addLocks;
@@ -62,6 +66,9 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
     protected DbProvider           dbProvider;
     // whether the delete statements are already written to file
     protected boolean              deleteStatementsInserted;
+    protected boolean              dropEntireTable;
+    protected boolean              skipTableContent;
+    protected boolean              writeGenerateForeignKeyProcedure;
 
     /**
      * Constructor
@@ -74,7 +81,8 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
         this.addLocks = true;
         this.disableForeignKeys = true;
         this.includeDeleteStatements = true;
-        this.dbTables = new LinkedHashMap<>();
+        this.writeGenerateForeignKeyProcedure = true;
+        this.dbTables = new LinkedHashMap<>(); // keep the order of the tables as they will be added
     }
 
     /**
@@ -92,23 +100,16 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
         BufferedWriter fileWriter = null;
         try {
             fileWriter = new BufferedWriter(new FileWriter(new File(backupFileName)));
-            log.debug("Dumping database backup to file '" + backupFileName + "'");
+            log.info("Started creation of database backup in file '" + backupFileName + "'");
 
             writeBackupToFile(fileWriter);
 
-            log.debug("Finished writing db backup to file '" + backupFileName + "'");
-
+            log.info("Completed creation of database backup in file '" + backupFileName + "'");
         } catch (Exception pe) {
             markBackupFileAsDamaged(fileWriter, backupFileName);
             throw new DatabaseEnvironmentCleanupException(ERROR_CREATING_BACKUP + backupFileName, pe);
         } finally {
-            try {
-                if (fileWriter != null) {
-                    fileWriter.close();
-                }
-            } catch (IOException ioe) {
-                log.error(ERROR_CREATING_BACKUP + backupFileName, ioe);
-            }
+            IoUtils.closeStream(fileWriter, ERROR_CREATING_BACKUP + backupFileName);
         }
     }
 
@@ -117,9 +118,9 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
      * @param fileWriter backup file writer
      * @param backupFileName backup file name
      */
-    private void markBackupFileAsDamaged(
-                                          Writer fileWriter,
-                                          String backupFileName ) {
+    protected void markBackupFileAsDamaged(
+                                            Writer fileWriter,
+                                            String backupFileName ) {
 
         try {
             if (fileWriter != null) {
@@ -134,7 +135,8 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
                     if (bkFile.renameTo(new File(dmgFileName))) {
                         log.debug("Faulty backup file is renamed to: " + dmgFileName);
                     } else {
-                        log.debug("Faulty backup file can`t be marked as 'damaged'. The rename operation Failed");
+                        log.warn("Faulty backup file '" + backupFileName
+                                 + "' can not be marked as damaged. The rename operation failed");
                     }
                 }
             }
@@ -163,10 +165,14 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
         for (Entry<String, DbTable> entry : dbTables.entrySet()) {
             DbTable dbTable = entry.getValue();
 
+            // use both table schema (if presented) and table name for the final table name
+            String fullTableName = null;
+            if (dbTable != null) {
+                fullTableName = dbTable.getFullTableName();
+            }
+
             if (log.isDebugEnabled()) {
-                log.debug("Preparing data for backup of table " + (dbTable != null
-                                                                                   ? dbTable.getTableName()
-                                                                                   : null));
+                log.debug("Preparing data for backup of table " + fullTableName);
             }
             List<ColumnDescription> columnsToSelect = null;
             columnsToSelect = getColumnsToSelect(dbTable, dbConnection.getUser());
@@ -174,21 +180,26 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
                 // NOTE: if needed change behavior to continue if the table has no columns.
                 // Currently it is assumed that if the table is described for backup then
                 // it contains some meaningful data and so it has columns
+
+                // NOTE: it is a good idea to print null instead of empty string for table name when table is null,
+                // so it is more obvious for the user that something is wrong
                 throw new DatabaseEnvironmentCleanupException("No columns to backup for table "
-                                                              + (dbTable != null
-                                                                                 ? dbTable.getTableName()
-                                                                                 : ""));
+                                                              + fullTableName);
             }
 
-            StringBuilder selectQuery = new StringBuilder();
-            selectQuery.append("SELECT ");
-            selectQuery.append(getColumnsString(columnsToSelect));
-            selectQuery.append(" FROM ");
-            selectQuery.append(dbTable.getTableName());
+            DbRecordValuesList[] records = new DbRecordValuesList[0];
+            if (!skipTableContent) {
+                StringBuilder selectQuery = new StringBuilder();
+                selectQuery.append("SELECT ");
+                selectQuery.append(getColumnsString(columnsToSelect));
+                selectQuery.append(" FROM ");
+                selectQuery.append(fullTableName);
 
-            DbQuery query = new DbQuery(selectQuery.toString());
+                DbQuery query = new DbQuery(selectQuery.toString());
+                // assuming not very large tables
+                records = dbProvider.select(query, DbReturnModes.ESCAPED_STRING);
 
-            DbRecordValuesList[] records = dbProvider.select(query, DbReturnModes.ESCAPED_STRING);
+            }
 
             writeTableToFile(columnsToSelect, dbTable, records, fileWriter);
         }
@@ -257,11 +268,17 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
      */
     public void addTable( DbTable dbTable ) {
 
-        if (dbTables.containsKey(dbTable.getTableName())) {
-            log.warn("DB table with name '" + dbTable.getTableName()
-                     + "' has already been added for backup.");
+        if (dbTable != null) {
+            String fullTableName = dbTable.getFullTableName();
+
+            if (dbTables.containsKey(fullTableName)) {
+                log.warn("DB table with name '" + fullTableName
+                         + "' has already been added for backup.");
+            } else {
+                dbTables.put(fullTableName, dbTable);
+            }
         } else {
-            dbTables.put(dbTable.getTableName(), dbTable);
+            log.warn("Could not add DB table that is null");
         }
 
     }
@@ -307,7 +324,71 @@ abstract class AbstractEnvironmentHandler implements BackupHandler, RestoreHandl
 
     }
 
+    /**
+     * Choose whether to recreate the tables during restore - default
+     * value should be false
+     * 
+     * @param dropEntireTable    enable or disable
+     * @see com.axway.ats.environment.database.model.BackupHandler#setDropTables(boolean)
+     */
+    public void setDropTables( boolean dropEntireTable ) {
+
+        this.dropEntireTable = dropEntireTable;
+
+    }
+
+    /**
+     * Choose whether to exclude the tables' content during backup and only backup the tables' metadata - defaul
+     * value is false, which means that both the tables' metadata and content will be backed up
+     * 
+     * @param skipTablesContent - true to skip, false otherwise
+     * @see com.axway.ats.environment.database.model.BackupHandler#setSkipTablesContent(boolean)
+     */
+    public void setSkipTablesContent( boolean skipTablesContent ) {
+
+        this.skipTableContent = skipTablesContent;
+
+    }
+
+    /**
+     * <p>Whether to drop table can be specified by either {@link #setDropTables(boolean)} or {@link DbTable#setDropTable(boolean)}</p>
+     * This method here wraps the logic that determines what must be done for a particular table
+     * */
+    protected boolean shouldDropTable( DbTable table ) {
+
+        if (table.isDropTable() == null) {
+            return dropEntireTable;
+        } else {
+            return table.isDropTable();
+        }
+    }
+
     protected abstract void writeDeleteStatements( Writer fileWriter ) throws IOException;
+
+    /**
+     * Get file contents from classpath
+     * @param scriptFileName Relative path is relative to the package of current class.
+     * @return String of  
+     */
+    protected String loadScriptFromClasspath( String scriptFileName ) {
+
+        String scriptContents = null;
+        try (InputStream is = this.getClass().getResourceAsStream(scriptFileName)) {
+            if (is != null) {
+                scriptContents = IoUtils.streamToString(is);
+            }
+        } catch (Exception e) {
+            if (e.getSuppressed() != null) { // possible close resources
+                Throwable[] suppressedExc = e.getSuppressed();
+                for (int i = 0; i < suppressedExc.length; i++) {
+                    log.warn("Suppressed exception [" + i + "] details", suppressedExc[i]);
+                }
+            }
+            throw new DbException("Could not load SQL server script needed for DB environment restore from classpath. Check "
+                                  + "location of " + scriptFileName + " file", e);
+        }
+        return scriptContents;
+    }
 
     /**
      * Release the database connection

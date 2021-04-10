@@ -23,16 +23,11 @@ import java.net.InetSocketAddress;
 import java.net.NetworkInterface;
 import java.net.Socket;
 import java.net.SocketException;
-import java.util.ArrayList;
-import java.util.Collections;
-import java.util.Enumeration;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
+import java.net.UnknownHostException;
+import java.util.*;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.systemproperties.AtsSystemProperties;
 
@@ -41,11 +36,13 @@ import com.axway.ats.common.systemproperties.AtsSystemProperties;
  */
 public class HostUtils {
 
-    private static final Logger      log             = Logger.getLogger(HostUtils.class);
+    private static final Logger      log                 = LogManager.getLogger(HostUtils.class);
 
-    public static final String       LOCAL_HOST_NAME = "localhost";
-    public static final String       LOCAL_HOST_IPv4 = "127.0.0.1";
-    public static final String       LOCAL_HOST_IPv6 = "::1";
+    public static final String       LOCAL_HOST_NAME     = "localhost";
+    public static final String       LOCAL_HOST_IPv4     = "127.0.0.1";
+    public static final String       LOCAL_HOST_IPv6     = "::1";
+    public static final int          LOWEST_PORT_NUMBER  = 1;
+    public static final int          HIGHEST_PORT_NUMBER = 64 * 1024;
 
     // List of hosts found to be local ones
     private static final Set<String> localHosts;
@@ -71,9 +68,11 @@ public class HostUtils {
     private static Map<String, InetAddress> localHostPublicAddresses = new HashMap<String, InetAddress>();
 
     /**
+     * <em>Internal method</em> and could be changed at any time. You may use CommonConfigurator.setHostLocality().
      * Allows specifying externally(from the test code) whether some host is a local or remote one
      *
-     * @param host host name or IP address
+     * @param host host name or IP address. Currently does not expect and does not parse agent address (IP:port or
+     *             host:port)
      * @param isLocal whether this host should be treated as a local or remote one
      */
     public static void setHostLocality( String host, boolean isLocal ) {
@@ -96,7 +95,7 @@ public class HostUtils {
 
         String localHostName = "";
         InetAddress inetAddress = null;
-        List<InetAddress> ipList = getIpAddressesList(true);
+        List<InetAddress> ipList = getIpAddressesList(true, false);
         if (ipList.size() > 0) {
             inetAddress = ipList.get(0);
         }
@@ -111,13 +110,34 @@ public class HostUtils {
      * return the first valid one, so the result is not clear when have more
      * than one network card installed.
      *
-     * @return
+     * @return first IP address found
      */
     public static String getLocalHostIP() {
 
         String localHostIP = "";
         InetAddress inetAddress = null;
-        List<InetAddress> ipList = getIpAddressesList(true);
+        List<InetAddress> ipList = getIpAddressesList(true, false);
+        if (ipList.size() > 0) {
+            inetAddress = ipList.get(0);
+        }
+        if (inetAddress != null) {
+            localHostIP = inetAddress.getHostAddress();
+        }
+        return localHostIP;
+    }
+
+    /**
+     * Get the IP (not the loopback 127.0.0.1) of the local host. Note: it will
+     * return the first valid one, so the result is not clear when have more
+     * than one network card installed.
+     * @param excludeDownOnes - whether to exclude interfaces that are down
+     * @return
+     */
+    public static String getLocalHostIP( boolean excludeDownOnes ) {
+
+        String localHostIP = "";
+        InetAddress inetAddress = null;
+        List<InetAddress> ipList = getIpAddressesList(true, excludeDownOnes);
         if (ipList.size() > 0) {
             inetAddress = ipList.get(0);
         }
@@ -143,6 +163,8 @@ public class HostUtils {
      */
     public static boolean isLocalHost( String host ) {
 
+        Set<InetAddress> foundAddresses = new HashSet<>();
+
         if (StringUtils.isNullOrEmpty(host)) {
             // we assume a local host
             return true;
@@ -155,45 +177,74 @@ public class HostUtils {
         } else {
             // unknown host, check if it is local or not
             Enumeration<NetworkInterface> netInterfaces = null;
-            try {
-                netInterfaces = NetworkInterface.getNetworkInterfaces();
-            } catch (SocketException e) {
-                // we hope this will never happen
-                log.error("Error obtaining info about this system's network interfaces. We will assume '"
-                          + host + "' is a local host", e);
-                return true;
+            long startTimeMs = -1;
+            if (log.isTraceEnabled()) {
+                startTimeMs = System.currentTimeMillis();
             }
+            try {
+                try {
+                    netInterfaces = NetworkInterface.getNetworkInterfaces();
+                } catch (SocketException e) {
+                    // we hope this will never happen
+                    log.error("Error obtaining info about this system's network interfaces. We will assume '"
+                              + host + "' is a local host", e);
+                    return true;
+                }
 
-            while (netInterfaces.hasMoreElements()) {
-                NetworkInterface netInterface = netInterfaces.nextElement();
+                while (netInterfaces.hasMoreElements()) {
+                    NetworkInterface netInterface = netInterfaces.nextElement();
 
-                Enumeration<InetAddress> inetAddresses = netInterface.getInetAddresses();
-                while (inetAddresses.hasMoreElements()) {
+                    Enumeration<InetAddress> inetAddresses = netInterface.getInetAddresses();
+                    while (inetAddresses.hasMoreElements()) {
 
-                    InetAddress inetAddress = inetAddresses.nextElement();
-                    String hostAddress = inetAddress.getHostAddress();
-                    if (inetAddress instanceof Inet6Address) {
+                        InetAddress inetAddress = inetAddresses.nextElement();
+                        foundAddresses.add(inetAddress); // cache the found inetAddress
+                        String hostAddress = inetAddress.getHostAddress();
+                        if (inetAddress instanceof Inet6Address) {
 
-                        if (hostAddress != null
-                            && stripIPv6InterfaceId(compressIPv6Address(host)).equalsIgnoreCase(stripIPv6InterfaceId(compressIPv6Address(hostAddress)))) {
+                            if (hostAddress != null
+                                && stripIPv6InterfaceId(compressIPv6Address(host)).equalsIgnoreCase(
+                                                                                                    stripIPv6InterfaceId(compressIPv6Address(hostAddress)))) {
+                                localHosts.add(host);
+                                return true;
+                            }
+                        } else if (host.equalsIgnoreCase(hostAddress)) {
                             localHosts.add(host);
                             return true;
                         }
-                    } else if (host.equalsIgnoreCase(hostAddress)) {
-                        localHosts.add(host);
-                        return true;
-                    }
 
-                    String hostName = inetAddress.getHostName();
-                    if (host.equalsIgnoreCase(hostName)) {
-                        localHosts.add(host);
-                        return true;
+                        String hostName = inetAddress.getHostName();
+                        localHosts.add(hostName); // local host name. Cache it regardless if this is currently checked
+                        // "host" or not
+                        if (host.equalsIgnoreCase(hostName)) {
+                            return true;
+                        }
+
                     }
                 }
-            }
 
-            nonlocalHosts.add(host);
-            return false;
+                try {
+                    InetAddress address = InetAddress.getByName(host);
+                    if (address != null && foundAddresses.contains(address)) {
+                        localHosts.add(host);
+                        return true;
+                    }
+                } catch (UnknownHostException e) {
+                    log.warn("Host '" + host + "' could not be resolved! Check name and network configuration", e);
+                    nonlocalHosts.add(host);
+                    return false;
+                }
+
+                nonlocalHosts.add(host);
+                return false;
+            } finally {
+                if (log.isTraceEnabled()) {
+                    log.trace(
+                              "Total duration to enumerate network interfaces and check locality for host: " + host
+                              + ": "
+                              + (System.currentTimeMillis() - startTimeMs) + " ms");
+                }
+            }
         }
     }
 
@@ -202,7 +253,7 @@ public class HostUtils {
      */
     public static List<InetAddress> getAllIpAddresses() {
 
-        return getIpAddressesList(false);
+        return getIpAddressesList(false, false);
     }
 
     /**
@@ -212,7 +263,7 @@ public class HostUtils {
      *
      * @return
      */
-    private static List<InetAddress> getIpAddressesList( boolean exitOnFirstIPv4 ) {
+    private static List<InetAddress> getIpAddressesList( boolean exitOnFirstIPv4, boolean excludeDownOnes ) {
 
         //list containing all ip addresses
         List<InetAddress> ipList = new ArrayList<InetAddress>();
@@ -221,19 +272,26 @@ public class HostUtils {
             // cycle all net interfaces
             Enumeration<NetworkInterface> netInterfaces = NetworkInterface.getNetworkInterfaces();
             if (log.isTraceEnabled()) {
-                log.trace( "Start iterating all network interfaces!" );
+                log.trace("Start iterating all network interfaces!");
             }
             while (netInterfaces.hasMoreElements()) {
-                NetworkInterface netInterface = (NetworkInterface) netInterfaces.nextElement();
+                NetworkInterface netInterface = netInterfaces.nextElement();
+                if (!netInterface.isUp()) {
+                    log.trace("Network interface '" + netInterface.toString() + "' is down. Skipping it");
+                    if (excludeDownOnes) {
+                        continue;
+                    }
+
+                }
                 if (!netInterface.isLoopback()) {
                     if (log.isTraceEnabled()) {
-                        log.trace( "    Start iterating interface '" + netInterface.getName() + "'" );
+                        log.trace("    Start iterating interface '" + netInterface.getName() + "'");
                     }
                     // for each net interface cycle all IP addresses
                     Enumeration<InetAddress> ipAddresses = netInterface.getInetAddresses();
                     InetAddress ipAddress = null;
                     while (ipAddresses.hasMoreElements()) {
-                        ipAddress = (InetAddress) ipAddresses.nextElement();
+                        ipAddress = ipAddresses.nextElement();
 
                         if (ipAddress instanceof java.net.Inet4Address) {
                             Inet4Address ipv4 = (Inet4Address) ipAddress;
@@ -244,13 +302,12 @@ public class HostUtils {
                                     /*
                                      * return list, containing the last added IP address,
                                      * which will be the first IPv4 address, that was found
-                                    */
+                                     */
                                     int listSize = ipList.size();
                                     return ipList.subList(listSize - 1, listSize);
                                 }
                             }
-                        } else //if( ip instanceof java.net.Inet6Address )
-                        {
+                        } else { // ( ip instanceof java.net.Inet6Address )
                             Inet6Address ipv6 = (Inet6Address) ipAddress;
                             // FIXME: currently we do not filter out the temporary IPv6 addresses
                             if (!ipv6.isLinkLocalAddress()) {
@@ -262,7 +319,7 @@ public class HostUtils {
                 }
             }
             if (log.isTraceEnabled()) {
-                log.trace( "Finish iterating all network interfaces!" );
+                log.trace("Finish iterating all network interfaces!");
             }
         } catch (SocketException se) {
             log.error("Error obtaining the local host address", se);
@@ -309,17 +366,19 @@ public class HostUtils {
                         socket.connect(sa, 30000);
                         InetAddress tmpPublicAddress = socket.getLocalAddress();
                         if (tmpPublicAddress == null || tmpPublicAddress.isAnyLocalAddress()
-                        /* like: 0.0.0.0 - there is Win & Java 6 issue for IPv6*/ ) {
+                        /* like: 0.0.0.0 - there is Win & Java 6 issue for IPv6*/) {
                             localHostPublicAddress = null;
-                            throw new IllegalStateException("Unable to retrieve public IP of the local host which is used to connect to agent at "
+                            throw new IllegalStateException(
+                                                            "Unable to retrieve public IP of the local host which is used to connect to agent at "
                                                             + remoteAtsAgent + ". Address returned was "
                                                             + tmpPublicAddress);
                         } else {
                             if (tmpPublicAddress.isLoopbackAddress()) {
-                                List<InetAddress> ipList = getIpAddressesList(true);
+                                List<InetAddress> ipList = getIpAddressesList(true, false);
                                 if (ipList.size() > 0) {
                                     tmpPublicAddress = ipList.get(0);
-                                    log.warn("We are unable to reliably retrieve the public IP of the local host which is used to connect to agent at "
+                                    log.warn(
+                                             "We are unable to reliably retrieve the public IP of the local host which is used to connect to agent at "
                                              + remoteAtsAgent + ". We will use the first retrieved IP: "
                                              + tmpPublicAddress);
                                 }
@@ -350,7 +409,7 @@ public class HostUtils {
 
             // 2. our last chance is to ask the JVM
             if (localHostPublicAddress == null) {
-                List<InetAddress> ipList = getIpAddressesList(true);
+                List<InetAddress> ipList = getIpAddressesList(true, false);
                 if (ipList.size() > 0) {
                     localHostPublicAddress = ipList.get(0);
                 }
@@ -369,8 +428,9 @@ public class HostUtils {
     }
 
     /**
-     * @param atsAgent
-     * @return whether the agent is located on the local host
+     * Checks if agent is local, on same host as the caller/test executor.
+     * @param atsAgent ATS agent address (hostname(IP) or hostname:port)
+     * @return whether the agent is located on the same  host as the caller
      */
     public static boolean isLocalAtsAgent( String atsAgent ) {
 
@@ -478,7 +538,8 @@ public class HostUtils {
      */
     public static String stripIPv6InterfaceId( String ipv6Address ) {
 
-        int interfaceIdIndex = ipv6Address.indexOf('%'); // this is the zone index: interface index or interface name, depending on the OS
+        int interfaceIdIndex = ipv6Address.indexOf(
+                                                   '%'); // this is the zone index: interface index or interface name, depending on the OS
         if (interfaceIdIndex > 0) {
             return ipv6Address.substring(0, interfaceIdIndex);
         }

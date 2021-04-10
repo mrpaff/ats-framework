@@ -37,7 +37,8 @@ import javax.mail.internet.MimeBodyPart;
 import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.bouncycastle.asn1.ASN1EncodableVector;
 import org.bouncycastle.asn1.ASN1ObjectIdentifier;
 import org.bouncycastle.asn1.cms.AttributeTable;
@@ -83,7 +84,7 @@ import com.sun.mail.util.BASE64DecoderStream;
 
 public class SMimePackageEncryptor implements PackageEncryptor {
 
-    private static final Logger  log                           = Logger.getLogger(SMimePackageEncryptor.class);
+    private static final Logger  LOG                           = LogManager.getLogger(SMimePackageEncryptor.class);
 
     public static final String   CONTENT_TYPE_MULTIPART_SIGNED = "multipart/signed";
 
@@ -247,6 +248,16 @@ public class SMimePackageEncryptor implements PackageEncryptor {
         this.aliasOrCN = aliasOrCNs.get(0);
     }
 
+    /**
+     * Set cipher ID to be used for encryption algorithm
+     * Use member class {@link Cipher} for common values. Current default is AES_128_CBC
+     * @param cipher Example {@link SMimePackageEncryptor.Cipher#AES128_CBC}
+     */
+    public void setEncryptionCipher( String cipher ) {
+
+        this.encryptionCipher = new ASN1ObjectIdentifier(cipher);
+    }
+
     @PublicAtsApi
     public Package encrypt( Package source ) throws ActionException {
 
@@ -267,7 +278,7 @@ public class SMimePackageEncryptor implements PackageEncryptor {
 
             ASN1ObjectIdentifier encryption = null;
             if (encryptionCipher == null) {
-                encryption = CMSAlgorithm.RC2_CBC;
+                encryption = CMSAlgorithm.AES128_CBC; //set default. Was CMSAlgorithm.RC2_CBC  
             } else {
                 encryption = encryptionCipher;
             }
@@ -348,13 +359,13 @@ public class SMimePackageEncryptor implements PackageEncryptor {
             MimeBodyPart result = null;
             try {
                 result = SMIMEUtil.toMimeBodyPart(recipient.getContent(jceKey));
-                if (log.isDebugEnabled()) {
-                    log.debug("Successfully decrypted message with subject '" + msg.getSubject()
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Successfully decrypted message with subject '" + msg.getSubject()
                               + "' with private key alias: " + aliasOrCN);
                 }
             } catch (SMIMEException e) {
-                if (log.isDebugEnabled()) {
-                    log.debug("Could not decrypt message with subject '" + sourcePackage.getSubject()
+                if (LOG.isDebugEnabled()) {
+                    LOG.debug("Could not decrypt message with subject '" + sourcePackage.getSubject()
                               + "' with private key alias '" + aliasOrCN + "'", e);
                 }
             }
@@ -387,7 +398,8 @@ public class SMimePackageEncryptor implements PackageEncryptor {
 
                         signedMessage = (SMIMESigned) content;
                     } else if (content instanceof BASE64DecoderStream) {
-
+                        // com.sun.mail.util.BASE64DecoderStream - JavaMail API dependency. Seems still available
+                        //   in JavaMail 2.0 so not an issue if using other non-Oracle/OpenJDK JVMs
                         signedMessage = new SMIMESigned(decryptedMsg); // will throw exception if not signed
                     }
                 } catch (Exception e) {
@@ -417,7 +429,7 @@ public class SMimePackageEncryptor implements PackageEncryptor {
                 try {
                     ((MimePackage) sourcePackage).closeStoreConnection(true);
                 } catch (MessagingException ex) {
-                    log.debug(ex); // do not hide possible exception thrown in catch block
+                    LOG.debug(ex); // do not hide possible exception thrown in catch block
                 }
             }
         }
@@ -433,22 +445,36 @@ public class SMimePackageEncryptor implements PackageEncryptor {
             }
 
             KeyStore ks = getKeystore();
+            // TODO wrap exception with possible causes and add some hint
             PrivateKey privateKey = (PrivateKey) ks.getKey(aliasOrCN, certPassword.toCharArray());
-            X509Certificate cer = (X509Certificate) ks.getCertificate(aliasOrCN);
+
+            // Get whole certificate chain
+            Certificate[] certArr = ks.getCertificateChain(aliasOrCN);
+            // Pre 4.0.6 behavior was not to attach full cert. chain X509Certificate cer = (X509Certificate) ks.getCertificate(aliasOrCN);
+            if (certArr.length >= 1) {
+                LOG.debug("Found certificate of alias: " + aliasOrCN + ". Lenght of cert chain: " + certArr.length
+                          + ", child cert:" + certArr[0].toString());
+            }
+
+            X509Certificate childCert = (X509Certificate) certArr[0];
 
             /* Create the SMIMESignedGenerator */
+            ASN1EncodableVector attributes = new ASN1EncodableVector();
+            attributes.add(new SMIMEEncryptionKeyPreferenceAttribute(
+                                                                     new IssuerAndSerialNumber(new X500Name(childCert.getIssuerDN()
+                                                                                                                     .getName()),
+                                                                                               childCert.getSerialNumber())));
+
             SMIMECapabilityVector capabilities = new SMIMECapabilityVector();
+            capabilities.addCapability(SMIMECapability.aES128_CBC);
             capabilities.addCapability(SMIMECapability.dES_EDE3_CBC);
             capabilities.addCapability(SMIMECapability.rC2_CBC, 128);
             capabilities.addCapability(SMIMECapability.dES_CBC);
 
-            ASN1EncodableVector attributes = new ASN1EncodableVector();
-            attributes.add(new SMIMEEncryptionKeyPreferenceAttribute(new IssuerAndSerialNumber(new X500Name( (cer).getIssuerDN()
-                                                                                                                  .getName()),
-                                                                                               cer.getSerialNumber())));
             attributes.add(new SMIMECapabilitiesAttribute(capabilities));
 
-            if (signatureAlgorithm == null) {
+            if (signatureAlgorithm == null) { // not specified explicitly 
+                // TODO check defaults to be used
                 signatureAlgorithm = SignatureAlgorithm.DSA.equals(privateKey.getAlgorithm())
                                                                                               ? "SHA1withDSA"
                                                                                               : "MD5withRSA";
@@ -459,11 +485,14 @@ public class SMimePackageEncryptor implements PackageEncryptor {
             signerGeneratorBuilder.setProvider(BouncyCastleProvider.PROVIDER_NAME);
             signerGeneratorBuilder.setSignedAttributeGenerator(new AttributeTable(attributes));
             signer.addSignerInfoGenerator(signerGeneratorBuilder.build(signatureAlgorithm, privateKey,
-                                                                       cer));
+                                                                       childCert));
 
             /* Add the list of certs to the generator */
             List<X509Certificate> certList = new ArrayList<X509Certificate>();
-            certList.add(cer);
+            for (int i = 0; i < certArr.length; i++) { // first add child cert, and CAs
+                certList.add((X509Certificate) certArr[i]);
+            }
+
             Store<?> certs = new JcaCertStore(certList);
             signer.addCertificates(certs);
 
@@ -565,7 +594,7 @@ public class SMimePackageEncryptor implements PackageEncryptor {
                         return true;
                     }
                 }
-                log.debug("No suitable public key found in the signature to verify it.");
+                LOG.debug("No suitable public key found in the signature to verify it.");
 
             } else { // load public key from the certificate store file
 
@@ -599,7 +628,7 @@ public class SMimePackageEncryptor implements PackageEncryptor {
 
                 }
 
-                log.debug("Could not verify the signature with the public key alias: " + keyAlias);
+                LOG.debug("Could not verify the signature with the public key alias: " + keyAlias);
             }
 
             return false;
@@ -612,7 +641,7 @@ public class SMimePackageEncryptor implements PackageEncryptor {
                 try {
                     ((MimePackage) sourcePackage).closeStoreConnection(false);
                 } catch (MessagingException ex) {
-                    log.debug(ex); // do not hide possible exception thrown in catch block
+                    LOG.debug(ex); // do not hide possible exception thrown in catch block
                 }
             }
         }

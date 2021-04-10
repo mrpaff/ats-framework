@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -19,7 +19,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.agent.core.configuration.RemoteLoggingConfigurator;
 import com.axway.ats.agent.core.exceptions.AgentException;
@@ -29,13 +30,16 @@ import com.axway.ats.agent.webapp.client.AgentException_Exception;
 import com.axway.ats.agent.webapp.client.AgentService;
 import com.axway.ats.agent.webapp.client.AgentServicePool;
 import com.axway.ats.agent.webapp.client.TestCaseState;
+import com.axway.ats.agent.webapp.client.configuration.AgentConfigurationLandscape;
 import com.axway.ats.agent.webapp.client.configuration.RemoteConfigurationManager;
+import com.axway.ats.core.AtsVersion;
 import com.axway.ats.core.events.ITestcaseStateListener;
+import com.axway.ats.core.utils.HostUtils;
 import com.axway.ats.log.AtsDbLogger;
 
 public class TestcaseStateListener implements ITestcaseStateListener {
 
-    private static Logger                log = Logger.getLogger(TestcaseStateListener.class);
+    private static Logger                log = LogManager.getLogger(TestcaseStateListener.class);
 
     // list of configured agents
     private static List<String>          configuredAgents;
@@ -85,7 +89,9 @@ public class TestcaseStateListener implements ITestcaseStateListener {
 
             } catch (Exception e) {
 
-                log.error("Can't send onTestEnd event to ATS agent '" + atsAgent + "'", e);
+                log.warn("Could not nofity ATS agent on '" + atsAgent
+                         + "' that testcase has ended. Probably the agent have become unreachable during test execution.",
+                         e);
             }
         }
         configuredAgents = null;
@@ -106,30 +112,47 @@ public class TestcaseStateListener implements ITestcaseStateListener {
             return;
         }
 
-        for (String atsAgent : atsAgents) {
+        synchronized (configuredAgents) {
 
-            // configure only not configured agents
-            if (!configuredAgents.contains(atsAgent)) {
+            for (String atsAgent : atsAgents) {
 
-                // Here we need to sync on the 'atsAgent' String, which is not good solution at all,
-                // because there can be another sync on the same string in the JVM (possible deadlocks).
-                // We will try to prevent that adding a 'unique' prefix
-                synchronized ( ("ATS_STRING_LOCK-" + atsAgent).intern()) {
+                // configure only not configured agents
+                if (!configuredAgents.contains(atsAgent)) {
 
                     if (!configuredAgents.contains(atsAgent)) {
 
-                        // Pass the logging configuration to the remote agent
-                        RemoteLoggingConfigurator remoteLoggingConfigurator = new RemoteLoggingConfigurator();
-                        new RemoteConfigurationManager().pushConfiguration(atsAgent,
-                                                                           remoteLoggingConfigurator);
+                        log.info("Pushing configuration to ATS Agent at '" + atsAgent + "'");
 
                         try {
+
+                            String agentVersion = AgentServicePool.getInstance().getClient(atsAgent).getAgentVersion();
+                            String atsVersion = AtsVersion.getAtsVersion();
+                            if (agentVersion != null) {
+                                if (!AtsVersion.getAtsVersion().equals(agentVersion)) {
+                                    log.warn("*** ATS WARNING *** You are using ATS version '" + atsVersion
+                                             + "' with ATS Agent version '" + agentVersion + "' located at '"
+                                             + HostUtils.getAtsAgentIpAndPort(atsAgent)
+                                             + "'. This might cause incompatibility problems!");
+                                }
+                            }
+
+                            // Pass the logging configuration to the remote agent
+                            RemoteLoggingConfigurator remoteLoggingConfigurator = new RemoteLoggingConfigurator(AgentConfigurationLandscape.getInstance(atsAgent)
+                                                                                                                                           .getDbLogLevel(),
+                                                                                                                AgentConfigurationLandscape.getInstance(atsAgent)
+                                                                                                                                           .getChunkSize());
+                            new RemoteConfigurationManager().pushConfiguration(atsAgent,
+                                                                               remoteLoggingConfigurator);
+
                             AgentService agentServicePort = AgentServicePool.getInstance()
                                                                             .getClient(atsAgent);
                             agentServicePort.onTestStart(getCurrentTestCaseState());
                         } catch (AgentException_Exception ae) {
 
                             throw new AgentException(ae.getMessage());
+                        } catch (Exception e) {
+                            throw new AgentException("Exception while trying to configure agent at " + atsAgent + ": "
+                                                     + e.getMessage(), e);
                         }
 
                         configuredAgents.add(atsAgent);
@@ -138,6 +161,40 @@ public class TestcaseStateListener implements ITestcaseStateListener {
 
             }
         }
+    }
+
+    @Override
+    public void invalidateConfiguredAtsAgents( List<String> atsAgents ) {
+
+        String message = "Invalidating ATS Log DB configuration for ATS agent '%s'";
+
+        if (configuredAgents == null || configuredAgents.isEmpty()) {
+            return;
+        } else {
+
+            synchronized (configuredAgents) {
+                for (String agent : atsAgents) {
+                    boolean agentCleared = false;
+
+                    if (configuredAgents.contains(agent)) {
+                        configuredAgents.remove(agent);
+                        agentCleared = true;
+                    } else {
+                        agent = HostUtils.getAtsAgentIpAndPort(agent); // set the default port if needed
+                        if (configuredAgents.contains(agent)) {
+                            configuredAgents.remove(agent);
+                            agentCleared = true;
+                        }
+                    }
+
+                    if (agentCleared) {
+                        log.info(String.format(message, agent));
+                    }
+
+                }
+            }
+        }
+
     }
 
     /**
@@ -157,6 +214,7 @@ public class TestcaseStateListener implements ITestcaseStateListener {
             TestCaseState wsTestCaseState = new TestCaseState();
             wsTestCaseState.setTestcaseId(testCaseState.getTestcaseId());
             wsTestCaseState.setRunId(testCaseState.getRunId());
+            wsTestCaseState.setLastExecutedTestcaseId(testCaseState.getLastExecutedTestcaseId());
             return wsTestCaseState;
         }
     }
@@ -200,4 +258,5 @@ public class TestcaseStateListener implements ITestcaseStateListener {
             // log.error( "Can't cleanup resource with identifier " + internalObjectResourceId + " on ATS agent '" + atsAgent + "'", e );
         }
     }
+
 }

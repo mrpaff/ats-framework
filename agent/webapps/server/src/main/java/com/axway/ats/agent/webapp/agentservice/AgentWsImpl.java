@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -51,6 +51,9 @@ import com.axway.ats.agent.core.exceptions.NoSuchComponentException;
 import com.axway.ats.agent.core.monitoring.queue.QueueExecutionStatistics;
 import com.axway.ats.agent.core.threading.data.config.LoaderDataConfig;
 import com.axway.ats.agent.core.threading.patterns.ThreadingPattern;
+import com.axway.ats.agent.webapp.restservice.BaseRestServiceImpl;
+import com.axway.ats.agent.webapp.restservice.RestSystemMonitor;
+import com.axway.ats.agent.webapp.restservice.model.SessionData;
 import com.axway.ats.common.systemproperties.AtsSystemProperties;
 import com.axway.ats.core.AtsVersion;
 import com.axway.ats.core.events.TestcaseStateEventsDispacher;
@@ -69,7 +72,7 @@ import com.axway.ats.log.autodb.TestCaseState;
 @WebService( name = "AgentService", targetNamespace = "http://agentservice/", serviceName = "AgentService", portName = "AgentServicePort")
 public class AgentWsImpl {
 
-    /** skip check whether ActiveDbAppender appender is presented in the test executors log4j.xml in order to execute actions,
+    /** skip check whether ActiveDbAppender appender is presented in the test executors log4j2.xml in order to execute actions,
      * even if such appender is not presented
      */
     private static final AtsDbLogger log                               = AtsDbLogger.getLogger("com.axway.ats.agent.webapp.agentservice", true);
@@ -108,6 +111,16 @@ public class AgentWsImpl {
             // cancel all action tasks, that are started on an agent, locate on the current caller host.
             // current caller and the agent must have the same IP, in order for queue to be cancelled
             MultiThreadedActionHandler.cancellAllQueuesFromAgent(caller);
+            
+            // cancel all monitoring, started previously by the current caller
+            SessionData sd = BaseRestServiceImpl.sessions.get(caller);
+            if(sd != null) {
+                RestSystemMonitor sysMon = sd.getSystemMonitor();
+                if(sysMon != null) {
+                    log.info("Stopping previously started monitoring from caller '" + caller + "' ...");
+                    sysMon.stopMonitoring(getAgentHostAddress());
+                }
+            }
 
             // get the current state on the remote machine
             TestCaseState currentState = log.getCurrentTestCaseState();
@@ -738,6 +751,11 @@ public class AgentWsImpl {
     }
     
     @WebMethod
+    public String getAgentVersion() {
+        return AtsVersion.getAtsVersion();
+    }
+    
+    @WebMethod
     public synchronized int getNumberPendingLogEvents() throws AgentException {
 
         final String caller = getCaller();
@@ -818,6 +836,17 @@ public class AgentWsImpl {
         }
 
         return "<Caller: " + request.getRemoteAddr() + "; ATS UID: " + uid + ">";
+    }
+    
+    private String getAgentHostAddress() {
+        
+        MessageContext msgx = wsContext.getMessageContext();
+
+        HttpServletRequest request = ((HttpServletRequest) msgx.get(MessageContext.SERVLET_REQUEST));
+
+
+        return request.getLocalAddr() + ":" + request.getLocalPort();
+        
     }
 
     private void handleExceptions(

@@ -4,7 +4,7 @@
     <parent>
         <groupId>com.axway.ats.framework.agent.webapp</groupId>
         <artifactId>ats-agent-webapp</artifactId>
-        <version>4.1.0-SNAPSHOT</version>
+        <version>4.0.8-SNAPSHOT</version>
     </parent>
 
     <artifactId>ats-agent-webapp-client</artifactId>
@@ -22,6 +22,30 @@
         </resources>
 
         <plugins>
+
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-javadoc-plugin</artifactId>
+                <version>${org.apache.maven.plugins.maven.javadoc.plugin.version}</version>
+                <configuration>
+                    <source>8</source>
+                    <!-- disables JDK 8 doclint javadoc feature, so all javadoc errors are
+                        treated as warnings -->
+                    <additionalJOption>-Xdoclint:none</additionalJOption>
+                    <quiet>true</quiet> <!-- Travis-related: reduce size of console log -->
+                    <failOnWarnings>false</failOnWarnings>
+                    <skip>false</skip>
+                </configuration>
+                <executions>
+                    <execution>
+                        <id>attach-javadocs</id>
+                        <goals>
+                            <goal>jar</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
+
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>jaxws-maven-plugin</artifactId>
@@ -33,6 +57,7 @@
                     </execution>
                 </executions>
                 <configuration>
+
                     <packageName>com.axway.ats.agent.webapp.client</packageName>
                 </configuration>
             </plugin>
@@ -71,13 +96,13 @@
                                 <artifactItem>
                                     <groupId>org.glassfish.metro</groupId>
                                     <artifactId>webservices-api</artifactId>
-                                    <version>2.1.1</version>
+                                    <!-- inherited version 2.4.3 <version>2.1.1</version>-->
                                     <type>jar</type>
                                 </artifactItem>
                                 <!-- Alternative with these 2 artifacts part of metro 2.1.1 APIs. They are not found in Axway repositories
                                  1. <groupId>javax.xml.bind</groupId> <artifactId>jaxb-api</artifactId>
                                         <version>2.2.4-1</version> <type>jar</type>
-                                 2.   <artifactItem> <groupId>javax.xml.ws</groupId> <artifactId>jaxws-api</artifactId>
+                                 2. <artifactItem> <groupId>javax.xml.ws</groupId> <artifactId>jaxws-api</artifactId>
                                     <version>2.2.5</version> <type>jar</type> </artifactItem> -->
                             </artifactItems>
                         </configuration>
@@ -92,7 +117,7 @@
                         <configuration>
                             <outputDirectory>${project.build.directory}/generated-resources</outputDirectory>
                             <includeGroupIds>${project.groupId}</includeGroupIds>
-                            <includeArtifacIds>ats-agent-webapp-server</includeArtifacIds>
+                            <includeArtifactIds>ats-agent-webapp-server</includeArtifactIds>
                             <includes>META-INF/wsdl/**</includes>
                             <excludeTransitive>true</excludeTransitive>
                         </configuration>

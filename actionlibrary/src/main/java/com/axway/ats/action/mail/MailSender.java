@@ -26,7 +26,8 @@ import javax.mail.NoSuchProviderException;
 import javax.mail.Session;
 import javax.mail.Transport;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.action.ActionLibraryConfigurator;
 import com.axway.ats.action.mail.model.MailTransportListener;
@@ -46,7 +47,7 @@ import com.axway.ats.core.utils.StringUtils;
 /**
  * Implementation for sending MIME packages
  *
- * <br/><br/>
+ * <br><br>
  * <b>User guide</b>
  * <a href="https://axway.github.io/ats-framework/Mail-and-SMTP-operations.html">page</a>
  * related to this class
@@ -54,7 +55,7 @@ import com.axway.ats.core.utils.StringUtils;
 @PublicAtsApi
 public class MailSender extends PackageSender {
 
-    private static final Logger             log            = Logger.getLogger(MailSender.class);
+    private static final Logger             log            = LogManager.getLogger(MailSender.class);
 
     private final ActionLibraryConfigurator configurator;
 
@@ -129,8 +130,8 @@ public class MailSender extends PackageSender {
     public void send( Package sourcePackage ) throws ActionException {
 
         if (! (sourcePackage instanceof MimePackage)) {
-            throw new WrongPackageException("Cannot send '" + sourcePackage.getClass().getSimpleName()
-                                            + "' packages");
+            throw new WrongPackageException("Could not send '" + sourcePackage.getClass().getSimpleName()
+                                            + "' packages. " + MimePackage.class.getSimpleName() + " is expected");
         }
 
         // initialize the SMTP session
@@ -177,7 +178,7 @@ public class MailSender extends PackageSender {
             transport.close();
             transport.removeTransportListener(transListener);
         } catch (MessagingException e) {
-            throw new ActionException("Could not send package", e);
+            throw new ActionException("Could not send package via SMTP to host '" + mailHost + "' and port " + mailPort, e);
         } catch (InterruptedException e) {
             throw new ActionException("Could not send package", e);
         }
@@ -214,7 +215,7 @@ public class MailSender extends PackageSender {
     }
 
     /**
-     * Set mail session property.<br/>
+     * Set mail session property.<br>
      * SMTP properties reference: https://javamail.java.net/nonav/docs/api/com/sun/mail/smtp/package-summary.html
      *
      * @param propertyKey property key

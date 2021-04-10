@@ -1,12 +1,12 @@
 /*
- * Copyright 2017 Axway Software
- * 
+ * Copyright 2017-2021 Axway Software
+ *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
- * 
+ *
  * http://www.apache.org/licenses/LICENSE-2.0
- * 
+ *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
@@ -16,6 +16,7 @@
 package com.axway.ats.agentapp.standalone;
 
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.UnsupportedEncodingException;
@@ -32,27 +33,46 @@ import java.util.Enumeration;
 import java.util.List;
 import java.util.Map;
 
-import org.apache.log4j.DailyRollingFileAppender;
-import org.apache.log4j.FileAppender;
-import org.apache.log4j.Level;
-import org.apache.log4j.Logger;
-import org.apache.log4j.PatternLayout;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.Appender;
+import org.apache.logging.log4j.core.LoggerContext;
+import org.apache.logging.log4j.core.appender.FileAppender;
+import org.apache.logging.log4j.core.appender.RollingFileAppender;
+import org.apache.logging.log4j.core.appender.rolling.DefaultRolloverStrategy;
+import org.apache.logging.log4j.core.appender.rolling.SizeBasedTriggeringPolicy;
+import org.apache.logging.log4j.core.config.Configuration;
+import org.apache.logging.log4j.core.config.ConfigurationSource;
+import org.apache.logging.log4j.core.config.Configurator;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilder;
+import org.apache.logging.log4j.core.config.builder.api.ConfigurationBuilderFactory;
+import org.apache.logging.log4j.core.config.builder.impl.BuiltConfiguration;
+import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.eclipse.jetty.server.Connector;
 import org.eclipse.jetty.server.Server;
 import org.eclipse.jetty.server.nio.SelectChannelConnector;
 import org.eclipse.jetty.webapp.WebAppContext;
 
 import com.axway.ats.agentapp.standalone.exceptions.AgentException;
-import com.axway.ats.agentapp.standalone.log.appenders.SizeRollingFileAppender;
 import com.axway.ats.agentapp.standalone.utils.AtsVersionExtractor;
 import com.axway.ats.agentapp.standalone.utils.CleaningThread;
 import com.axway.ats.agentapp.standalone.utils.ThreadUtils;
 
 public class ContainerStarter {
 
-    private static final Logger log                      = Logger.getLogger(ContainerStarter.class);
-    private static final String DEFAULT_AGENT_PORT_KEY   = "ats.agent.default.port";                // NOTE: on change sync with ATSSystemProperties
-    private static final int    DEFAULT_AGENT_PORT_VALUE = 8089;                                    // NOTE: on change sync with ATSSystemProperties
+    static {
+        ConfigurationBuilder<BuiltConfiguration> builder = ConfigurationBuilderFactory.newConfigurationBuilder();
+        builder.setStatusLevel(Level.ERROR);
+        builder.setConfigurationName("ContainerStarterConfig");
+        builder.add(builder.newRootLogger(Level.INFO));
+        Configurator.initialize(builder.build());
+        log = LogManager.getLogger(ContainerStarter.class);
+    }
+
+    private static final Logger log;
+    private static final String DEFAULT_AGENT_PORT_KEY   = "ats.agent.default.port"; // NOTE: on change sync with AtsSystemProperties
+    private static final int    DEFAULT_AGENT_PORT_VALUE = 8089;                     // NOTE: on change sync with AtsSystemProperties
 
     /**
      * Entry point for the premain java agent starting the ATS Agent
@@ -80,7 +100,6 @@ public class ContainerStarter {
 
     /**
      * Method for starting the Jetty server with the ATS Agent webapp.
-     * @param port the port on which to start the server.
      * @return the started server.
      * @throws IOException
      */
@@ -105,6 +124,8 @@ public class ContainerStarter {
         WebAppContext webApp = new WebAppContext();
         webApp.setContextPath("/agentapp");
         webApp.setWar(jettyHome + "/webapp/agentapp.war");
+        webApp.setAttribute("org.eclipse.jetty.webapp.basetempdir",
+                            getJettyWorkDir(jettyHome));
 
         server.setHandler(webApp);
         server.setStopAtShutdown(true);
@@ -182,6 +203,32 @@ public class ContainerStarter {
         }
 
         return jettyHome;
+    }
+
+    /**
+     * @param jettyHome
+     * @return the folder where our web application will be deployed
+     */
+    private static String getJettyWorkDir( String jettyHome ) {
+
+        // the folder where the web application will be deployed
+        final String jettyWorkDir = jettyHome + "/work";
+
+        /* Make the folder if does not exist.
+         * If cannot make this folder for some reason, no error will be reported.
+         * Then Jetty will see this folder does not exist and will use the folder
+         * pointed by the java.io.tmpdir system property
+         */
+        File workDirF = new File(jettyWorkDir);
+        if (! workDirF.exists()) {
+            if (!workDirF.mkdir()) {
+                System.err.println("Could not create work directory '" + jettyWorkDir
+                                   + "'. Check current user's permissions for this directory. Jetty will generate its work "
+                                   + "directory inside OS temp directory.");
+            }
+        }
+
+        return jettyWorkDir;
     }
 
     private static void setExtraClasspath( WebAppContext webApp, String jettyHome ) {
@@ -315,61 +362,140 @@ public class ContainerStarter {
         String agentPort = (String) variables.get("ats.agent.default.port");
         String agentSeverity = (String) variables.get("logging.severity");
 
+        /*
+         * If the log4j2.xml file has user-defined/third-party filters, they must be in the classpath (inside container directory)
+         **/
+        boolean enableLog4jConfigFile = Boolean.valueOf((String) variables.get("logging.enable.log4j2.file"));
+        String log4JFileName = "log4j2.xml"; // on the same level as agent.sh/.bat
+        File file = new File(log4JFileName);
+        if (file.exists()) {
+            System.out.println("ContainerStarter: Found " + log4JFileName + " file in current directory ("
+                               + file.getAbsolutePath()
+                               + ") and will be used instead of default ATS logging configuration.");
+            ConfigurationSource source = new ConfigurationSource(new FileInputStream(file));
+            Configurator.initialize(null, source);
+            // possibly manage log level of Jetty
+            return;
+        }
+        if (enableLog4jConfigFile) {
+            String dir = System.getProperty("ats.agent.home");
+            StringBuilder fullPath = new StringBuilder();
+            if (dir != null && dir.trim().length() > 0) {
+                fullPath.append(dir);
+                if (!dir.endsWith("/") && !dir.endsWith("\\")) {
+                    fullPath.append("/");
+                }
+            }
+            fullPath.append("ats-agent/container/log4j2.xml");
+            System.out.println("ContainerStarter: Loading log4j2.xml file from " + fullPath);
+            ConfigurationSource source = new ConfigurationSource(new FileInputStream(fullPath.toString()));
+            Configurator.initialize(null, source);
+        }
+
         // check agent logging severity and set the appropriate level
-        if ("INFO".equalsIgnoreCase(agentSeverity)) {
-            logLevel = Level.INFO;
-        } else if ("DEBUG".equalsIgnoreCase(agentSeverity)) {
-            logLevel = Level.DEBUG;
-        } else if ("WARN".equalsIgnoreCase(agentSeverity)) {
-            logLevel = Level.WARN;
-        } else if ("ERROR".equalsIgnoreCase(agentSeverity)) {
-            logLevel = Level.ERROR;
-        } else if ("FATAL".equalsIgnoreCase(agentSeverity)) {
-            logLevel = Level.FATAL;
-        } else {
-            log.info("Unknown severity level is set: " + agentSeverity
-                     + ". Possible values are: DEBUG, INFO, WARN, ERROR, FATAL.");
+        if (agentSeverity != null) {
+            if ("INFO".equalsIgnoreCase(agentSeverity)) {
+                logLevel = Level.INFO;
+            } else if ("DEBUG".equalsIgnoreCase(agentSeverity)) {
+                logLevel = Level.DEBUG;
+            } else if ("WARN".equalsIgnoreCase(agentSeverity)) {
+                logLevel = Level.WARN;
+            } else if ("ERROR".equalsIgnoreCase(agentSeverity)) {
+                logLevel = Level.ERROR;
+            } else if ("FATAL".equalsIgnoreCase(agentSeverity)) {
+                logLevel = Level.FATAL;
+            } else {
+                log.info("Unknown severity level is set: " + agentSeverity
+                         + ". Possible values are: DEBUG, INFO, WARN, ERROR, FATAL.");
+            }
         }
 
         String logPath = "./logs/ATSAgentAudit_" + agentPort + ".log";
-        PatternLayout layout = new PatternLayout("%d{ISO8601} - {%p} [%t] %c{2}: %x %m%n");
+        PatternLayout layout = PatternLayout.newBuilder().withPattern("%d{DEFAULT} - {%p} [%t] %c{2}: %m%n").build();
 
-        Logger rootLogger = Logger.getRootLogger();
-        FileAppender attachedAppender = null;
+        Logger rootLogger = LogManager.getRootLogger();
+        Appender attachedAppender = null;
         if (pattern != null && !pattern.trim().isEmpty()) {
             pattern = pattern.trim().toLowerCase();
             if ("day".equals(pattern)) {
-                attachedAppender = new DailyRollingFileAppender(layout, logPath, "'.'MM-dd'.log'");
+                attachedAppender = RollingFileAppender.newBuilder()
+                                                      .setName("ats-audit-log-appender")
+                                                      .setLayout(layout)
+                                                      .withFilePattern(
+                                                                       logPath + "'.'MM-dd'.log'")
+                                                      .build();
             } else if ("hour".equals(pattern)) {
-                attachedAppender = new DailyRollingFileAppender(layout, logPath, "'.'MM-dd-HH'.log'");
+                attachedAppender = RollingFileAppender.newBuilder()
+                                                      .setName("ats-audit-log-appender")
+                                                      .setLayout(layout)
+                                                      .withFilePattern(
+                                                                       logPath + "'.'MM-dd-HH'.log'")
+                                                      .build();
             } else if ("minute".equals(pattern)) {
-                attachedAppender = new DailyRollingFileAppender(layout, logPath, "'.'MM-dd-HH-mm'.log'");
+                attachedAppender = RollingFileAppender.newBuilder()
+                                                      .setName("ats-audit-log-appender")
+                                                      .setLayout(layout)
+                                                      .withFilePattern(
+                                                                       logPath + "'.'MM-dd-HH-mm'.log'")
+                                                      .build();
             } else if (pattern.endsWith("kb") || pattern.endsWith("mb") || pattern.endsWith("gb")) {
-                attachedAppender = new SizeRollingFileAppender(layout, logPath, true);
-                ((SizeRollingFileAppender) attachedAppender).setMaxFileSize(pattern);
-                ((SizeRollingFileAppender) attachedAppender).setMaxBackupIndex(10);
+
+                //attachedAppender = new SizeRollingFileAppender(layout, logPath, true);
+                //((SizeRollingFileAppender) attachedAppender).setMaxFileSize(pattern);
+                //((SizeRollingFileAppender) attachedAppender).setMaxBackupIndex(10);
+
+                attachedAppender = RollingFileAppender.newBuilder()
+                                                      .setName("ats-audit-log-appender")
+                                                      //.withAdvertise(true|false)
+                                                      //.withAdvertiseUri(advertiseUri)
+                                                      .withAppend(true)
+                                                      //.withBufferedIo(true|false)
+                                                      //.withBufferSize(bufferSize)
+                                                      //.setConfiguration(config)
+                                                      //.withFileName(fileName)
+                                                      .withFilePattern(pattern)
+                                                      //.setFilter(filter)
+                                                      //.setIgnoreExceptions(Booleans.parseBoolean(ignore, true))
+                                                      //.withImmediateFlush(Booleans.parseBoolean(immediateFlush, true)).setLayout(layout)
+                                                      //.withCreateOnDemand(false)
+                                                      //.withLocking(false)
+                                                      //.setName(name)
+                                                      .withPolicy(SizeBasedTriggeringPolicy.createPolicy(pattern))
+                                                      .withStrategy(DefaultRolloverStrategy.newBuilder()
+                                                                                           .withMax("10")
+                                                                                           .build())
+                                                      .build();
+
             } else {
                 System.err.println("ERROR: '" + pattern
-                                   + "' is invalid pattern for log4j rolling file appender");
+                                   + "' is invalid pattern for log4j2 rolling file appender");
                 System.exit(1);
             }
         }
         if (attachedAppender == null) {
+            //  default overwrite
+            attachedAppender = FileAppender.newBuilder()
+                                           .setName("ats-audit-log-appender")
+                                           .withFileName(logPath)
+                                           .setLayout(layout)
+                                           .withAppend(false)
+                                           .build();
 
-            attachedAppender = new FileAppender();
-            attachedAppender.setFile(logPath);
-            attachedAppender.setLayout(layout);
-            attachedAppender.setAppend(false);
         }
-        attachedAppender.activateOptions();
-        rootLogger.setLevel(logLevel);
-        rootLogger.addAppender(attachedAppender);
+
+        Configurator.setRootLevel(logLevel);
+        LoggerContext context = LoggerContext.getContext(true);
+        Configuration config = context.getConfiguration();
+        //attachedAppender.activateOptions();
+        // start() is almost the same as activateOptions()
+        attachedAppender.start(); // Always start an Appender prior to adding it to a logger.
+        ((org.apache.logging.log4j.core.Logger) rootLogger).addAppender(attachedAppender);
 
         // adding filter for Jetty messages
-        Logger mortbayLogger = Logger.getLogger("org.mortbay");
-        mortbayLogger.setAdditivity(false);
-        mortbayLogger.setLevel(Level.ERROR);
-        mortbayLogger.addAppender(attachedAppender);
+        Logger mortbayLogger = LogManager.getLogger("org.mortbay");
+        ((org.apache.logging.log4j.core.Logger) mortbayLogger).setAdditive(false);
+        Configurator.setLevel(mortbayLogger.getName(), Level.ERROR);
+        ((org.apache.logging.log4j.core.Logger) mortbayLogger).addAppender(attachedAppender);
 
     }
 
@@ -380,11 +506,11 @@ public class ContainerStarter {
 
             // cycle all net interfaces
             Enumeration<NetworkInterface> netInterfaces = NetworkInterface.getNetworkInterfaces();
-            log.debug( "---> Start Iterating All Network Interfaces!" );
+            log.debug("---> Start Iterating All Network Interfaces!");
             while (netInterfaces.hasMoreElements()) {
                 NetworkInterface netInterface = (NetworkInterface) netInterfaces.nextElement();
                 if (!netInterface.isLoopback()) {
-                    log.debug( "---> Start Iterating Interface '" + netInterface.getName() + "'!" );
+                    log.debug("---> Start Iterating Interface '" + netInterface.getName() + "'!");
                     // for each net interface cycle all IP addresses
                     Enumeration<InetAddress> ipAddresses = netInterface.getInetAddresses();
                     InetAddress ipAddress = null;
@@ -409,7 +535,7 @@ public class ContainerStarter {
                     }
                 }
             }
-            log.debug( "---> Finish Iterating All Network Interfaces!" );
+            log.debug("---> Finish Iterating All Network Interfaces!");
         } catch (SocketException se) {
             log.error("Error obtaining the local host address", se);
         }
@@ -423,12 +549,15 @@ public class ContainerStarter {
         try {
             appendMessage(systemInformation, "ATS version: '",
                           AtsVersionExtractor.getATSVersion(jettyHome + "/webapp/agentapp.war"));
-        } catch (Exception e) {}
-        appendMessage(systemInformation, " os.name: '", (String) System.getProperty("os.name"));
-        appendMessage(systemInformation, " os.arch: '", (String) System.getProperty("os.arch"));
-        appendMessage(systemInformation, " java.version: '",
-                      (String) System.getProperty("java.version"));
-        appendMessage(systemInformation, " java.home: '", (String) System.getProperty("java.home"));
+        } catch (Exception e) {
+            log.warn("Could not parse ATS version. Agent will continue the start operation", e);
+        }
+        appendMessage(systemInformation, " os.name: '", System.getProperty("os.name"));
+        appendMessage(systemInformation, " os.arch: '", System.getProperty("os.arch"));
+        appendMessage(systemInformation, " java.version: '", System.getProperty("java.version"));
+        appendMessage(systemInformation, " java.home: '", System.getProperty("java.home"));
+        appendMessage(systemInformation, " current directory: '", System.getProperty("user.dir"));
+        appendMessage(systemInformation, " current user name: '", System.getProperty("user.name"));
 
         List<String> ipList = new ArrayList<String>();
         for (InetAddress ip : getAllIPAddresses()) {

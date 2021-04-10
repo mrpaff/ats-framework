@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -18,7 +18,8 @@ package com.axway.ats.core.events;
 import java.lang.reflect.Method;
 import java.util.List;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 /**
  * This singleton must stay in the Core library as it is referenced from Agent Webapp and Test Harness.
@@ -28,7 +29,7 @@ import org.apache.log4j.Logger;
  */
 public class TestcaseStateEventsDispacher implements ITestcaseStateListener {
 
-    private static final Logger                 log                                = Logger.getLogger(TestcaseStateEventsDispacher.class);
+    private static final Logger                 log                                = LogManager.getLogger(TestcaseStateEventsDispacher.class);
 
     private static TestcaseStateEventsDispacher instance;
 
@@ -118,5 +119,14 @@ public class TestcaseStateEventsDispacher implements ITestcaseStateListener {
         if (testcaseStateListener != null) {
             testcaseStateListener.cleanupInternalObjectResources(atsAgent, internalObjectResourceId);
         }
+    }
+
+    @Override
+    public void invalidateConfiguredAtsAgents( List<String> atsAgents ) {
+
+        if (testcaseStateListener != null) {
+            testcaseStateListener.invalidateConfiguredAtsAgents(atsAgents);
+        }
+
     }
 }

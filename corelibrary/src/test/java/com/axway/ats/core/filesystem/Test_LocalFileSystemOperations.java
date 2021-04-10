@@ -37,7 +37,9 @@ import java.net.URL;
 import java.util.Arrays;
 import java.util.Random;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.easymock.EasyMock;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
@@ -64,7 +66,7 @@ import com.axway.ats.core.filesystem.model.FileAttributes;
 @PrepareForTest( { LocalFileSystemOperations.class, OperatingSystemType.class })
 public class Test_LocalFileSystemOperations extends BaseTest {
 
-    private static Logger             log                        = Logger.getLogger(Test_LocalFileSystemOperations.class);
+    private static Logger             log                        = LogManager.getLogger(Test_LocalFileSystemOperations.class);
 
     private static final String       NEW_FILE_NAME              = "new.file";
     private static final String       NEW_FILE_NAME_INVALID      = "!@#$%/^&*()";
@@ -730,10 +732,11 @@ public class Test_LocalFileSystemOperations extends BaseTest {
         expectNew(File.class, newDirectoryPath).andReturn(mockFile);
         expect(mockFile.exists()).andReturn(true);
         expect(mockFile.isDirectory()).andReturn(true);
-        expect(mockFile.listFiles()).andReturn(new File[]{ innnerFile });
+        expect(mockFile.toPath()).andReturn(null);
         expect(innnerFile.isDirectory()).andReturn(false);
         expect(innnerFile.delete()).andReturn(false);
         replayAll();
+        EasyMock.createNiceControl();
 
         testObject.purgeDirectoryContents(newDirectoryPath);
 

@@ -19,13 +19,17 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 import javax.management.MBeanServerConnection;
+import javax.management.ObjectName;
 import javax.management.openmbean.CompositeData;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.performance.monitor.PerformanceMonitor;
 import com.axway.ats.common.performance.monitor.beans.ReadingBean;
@@ -38,7 +42,7 @@ import com.axway.ats.core.utils.StringUtils;
  */
 public class AtsJvmMonitor extends PerformanceMonitor {
 
-    private static final Logger       log              = Logger.getLogger(AtsJvmMonitor.class);
+    private static final Logger       log              = LogManager.getLogger(AtsJvmMonitor.class);
 
     // the key is the jvm port, the values are the mbeans
     private Map<String, MBeanWrapper> mbeanWrappers    = new HashMap<String, MBeanWrapper>();
@@ -258,7 +262,7 @@ public class AtsJvmMonitor extends PerformanceMonitor {
 
                 applyMemoryNormalizationFactor();
 
-                mBeanName = mbeanWrapper.getObjectName("java.lang:type=MemoryPool,name=Eden Space");
+                mBeanName = mbeanWrapper.getObjectNames(".*Eden Space.*", true).iterator().next();
             }
 
             @Override
@@ -293,7 +297,7 @@ public class AtsJvmMonitor extends PerformanceMonitor {
 
                 applyMemoryNormalizationFactor();
 
-                mBeanName = mbeanWrapper.getObjectName("java.lang:type=MemoryPool,name=Survivor Space");
+                mBeanName = mbeanWrapper.getObjectNames(".*Survivor Space.*", true).iterator().next();
             }
 
             @Override
@@ -328,7 +332,8 @@ public class AtsJvmMonitor extends PerformanceMonitor {
 
                 applyMemoryNormalizationFactor();
 
-                mBeanName = mbeanWrapper.getObjectName("java.lang:type=MemoryPool,name=Tenured Gen");
+                // Java 7/8 returns the Bean name as type,name, while java 9+ name,type so here we check for both formats
+                mBeanName = mbeanWrapper.getObjectNames(".*(type=MemoryPool,name=.*Old Gen.*)|.*(name=.*Old Gen.*,type=MemoryPool).*", true).iterator().next();
             }
 
             @Override
@@ -363,7 +368,7 @@ public class AtsJvmMonitor extends PerformanceMonitor {
 
                 applyMemoryNormalizationFactor();
 
-                mBeanName = mbeanWrapper.getObjectName("java.lang:type=MemoryPool,name=Perm Gen");
+                mBeanName = mbeanWrapper.getObjectNames(".*(type=MemoryPool,name=Metaspace)|.*(name=Metaspace,type=MemoryPool).*", true).iterator().next();
             }
 
             @Override
@@ -393,21 +398,48 @@ public class AtsJvmMonitor extends PerformanceMonitor {
                                       0) {
             private static final long serialVersionUID = 1L;
 
+            /**
+             * This is set of all of the ObjectName(s) (Beans) that represent the heap size
+             * */
+            Set<ObjectName>           heaps            = null;
+
             @Override
             public void init() {
 
                 applyMemoryNormalizationFactor();
 
-                mBeanName = mbeanWrapper.getObjectName("java.lang:name=Code Cache,type=MemoryPool");
+                String javaVersion = System.getProperty("java.version");
+
+                if (javaVersion.startsWith("1.")) {
+                    mBeanName = mbeanWrapper.getObjectName("java.lang:name=Code Cache,type=MemoryPool");
+                } else {
+                    heaps = mbeanWrapper.getObjectNames(".*CodeHeap.*", false);
+                    // save the first as a bean, because our logic requires this to be not null
+                    mBeanName = heaps.iterator().next();
+                }
+
             }
 
             @Override
             public float poll() {
 
-                CompositeData attribute = (CompositeData) mbeanWrapper.getMBeanAttribute(mBeanName,
-                                                                                         "Usage");
+                long value = 0;
+                if (heaps != null) {
 
-                return fixLongValue(Long.valueOf( (attribute).get("used").toString()))
+                    Iterator<ObjectName> it = heaps.iterator();
+                    while (it.hasNext()) {
+                        CompositeData attribute = (CompositeData) mbeanWrapper.getMBeanAttribute(it.next(),
+                                                                                                 "Usage");
+                        value += Long.valueOf( (attribute).get("used").toString());
+                    }
+
+                } else {
+                    CompositeData attribute = (CompositeData) mbeanWrapper.getMBeanAttribute(mBeanName,
+                                                                                             "Usage");
+                    value = Long.valueOf( (attribute).get("used").toString());
+                }
+
+                return fixLongValue(value)
                        * normalizationFactor;
             }
         };

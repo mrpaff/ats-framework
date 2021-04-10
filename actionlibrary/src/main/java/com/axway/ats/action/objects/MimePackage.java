@@ -54,7 +54,8 @@ import javax.mail.internet.MimeMessage;
 import javax.mail.internet.MimeMultipart;
 import javax.mail.internet.MimePart;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.mail.smime.SMIMESigned;
 
@@ -116,7 +117,7 @@ public class MimePackage implements Package {
      * The logger - it is initialized in the constructor, so that child classes
      * can log in the appropriate logger and not in the MimePackage logger
      */
-    private static final Logger   log                                = Logger.getLogger(MimePackage.class);
+    private static final Logger   log                                = LogManager.getLogger(MimePackage.class);
 
     private static final String   CONTENT_TYPE_MULTIPART_SIGNED      = "multipart/signed";                 // TODO move in security package
 
@@ -187,7 +188,7 @@ public class MimePackage implements Package {
     /**
      * Flag to show that message for interrupted parsing of nested MIME parts is already logged.
      * Such message is logged to indicate that some MIME parts are not parsed because of reached max nested level
-     * {@link ActionLibraryConfigurator.getInstance().getMimePackageMaxNestedLevel()}
+     * {@link ActionLibraryConfigurator#getMimePackageMaxNestedLevel()}
      */
     private boolean               skippedParsingMsgIsAlreadyLogged   = false;
 
@@ -260,13 +261,9 @@ public class MimePackage implements Package {
      * Returns the MIME package we want to work with. This could be the top
      * level package or some nested package.
      *
-     * @param packagePath
-     *            path to the needed package
-     * @param fullPackagePath
-     *            backup of the path to the needed package. This is used for
-     *            logging purposes.
-     * @return
-     * @throws NoSuchMimePackageException
+     * @param packagePath  path to the needed package
+     * @return {@link MimePackage} instance of the specific nested mail part
+     * @throws NoSuchMimePackageException If mail message is not found matching specific path
      */
     @PublicAtsApi
     public MimePackage getNeededMimePackage(

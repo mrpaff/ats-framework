@@ -20,26 +20,30 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.io.Writer;
+import java.sql.CallableStatement;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map.Entry;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.systemproperties.AtsSystemProperties;
 import com.axway.ats.core.dbaccess.ColumnDescription;
 import com.axway.ats.core.dbaccess.ConnectionPool;
 import com.axway.ats.core.dbaccess.DbRecordValue;
 import com.axway.ats.core.dbaccess.DbRecordValuesList;
+import com.axway.ats.core.dbaccess.DbUtils;
 import com.axway.ats.core.dbaccess.MysqlColumnDescription;
 import com.axway.ats.core.dbaccess.exceptions.DbException;
 import com.axway.ats.core.dbaccess.mysql.DbConnMySQL;
 import com.axway.ats.core.dbaccess.mysql.MysqlDbProvider;
 import com.axway.ats.core.utils.IoUtils;
+import com.axway.ats.core.utils.StringUtils;
 import com.axway.ats.environment.database.exceptions.ColumnHasNoDefaultValueException;
 import com.axway.ats.environment.database.exceptions.DatabaseEnvironmentCleanupException;
 import com.axway.ats.environment.database.model.DbTable;
@@ -50,7 +54,7 @@ import com.axway.ats.environment.database.mysql.MysqlColumnNames;
  */
 class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
 
-    private static final Logger log            = Logger.getLogger(MysqlEnvironmentHandler.class);
+    private static final Logger log            = LogManager.getLogger(MysqlEnvironmentHandler.class);
     private static final String HEX_PREFIX_STR = "0x";
     private boolean             isJDBC4;
 
@@ -76,7 +80,7 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
         boolean isAutoCommit = true;
 
         try {
-            log.debug("Starting restoring db backup from file '" + backupFileName + "'");
+            log.info("Started restore of database backup from file '" + backupFileName + "'");
 
             backupReader = new BufferedReader(new FileReader(new File(backupFileName)));
 
@@ -90,21 +94,36 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
             while (line != null) {
 
                 sql.append(line);
+                if (line.startsWith(DROP_TABLE_MARKER)) {
+
+                    String table = line.substring(DROP_TABLE_MARKER.length()).trim();
+                    String owner = table.substring(0, table.indexOf("."));
+                    String simpleTableName = table.substring(table.indexOf(".") + 1);
+                    dropAndRecreateTable(connection, simpleTableName, owner);
+
+                }
                 if (line.endsWith(EOL_MARKER)) {
+
+                    PreparedStatement updateStatement = null;
 
                     // remove the OEL marker
                     sql.delete(sql.length() - EOL_MARKER.length(), sql.length());
-                    PreparedStatement updateStatement = connection.prepareStatement(sql.toString());
+                    if (sql.toString().trim().startsWith("INSERT INTO")) {
+                        // This line escapes non-printable string chars. Hex data is already escaped as 0xABC without backslash(\)
+                        String insertQuery = sql.toString().replace("\\0x", "\\");
+                        updateStatement = connection.prepareStatement(insertQuery);
+                    } else {
+                        updateStatement = connection.prepareStatement(sql.toString());
+                    }
 
                     //catch the exception and roll back, otherwise we are locked
                     try {
                         updateStatement.execute();
 
                     } catch (SQLException sqle) {
-                        log.error("Error invoking restore satement: " + sql.toString());
                         //we have to roll back the transaction and re throw the exception
                         connection.rollback();
-                        throw sqle;
+                        throw new SQLException("Error invoking restore satement: " + sql.toString(), sqle);
                     } finally {
                         try {
                             updateStatement.close();
@@ -133,7 +152,7 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
                 throw sqle;
             }
 
-            log.debug("Finished restoring db backup from file '" + backupFileName + "'");
+            log.info("Completed restore of database backup from file '" + backupFileName + "'");
 
         } catch (IOException ioe) {
             throw new DatabaseEnvironmentCleanupException("Could not restore backup from file "
@@ -170,10 +189,8 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
         try {
             columnsMetaData = dbProvider.select("SHOW COLUMNS FROM " + table.getTableName());
         } catch (DbException e) {
-            log.error("Could not get columns for table "
-                      + table.getTableName()
-                      + ". Check if the table is existing and that the user has permissions. See more details in the trace.");
-            throw e;
+            throw new DbException("Could not get columns for table " + table.getTableName()
+                                  + ". Check if the table is existing and that the user has permissions. See more details in the trace.");
         }
 
         for (DbRecordValuesList columnMetaData : columnsMetaData) {
@@ -206,12 +223,32 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
                                      DbRecordValuesList[] records,
                                      Writer fileWriter ) throws IOException {
 
-        if (!this.deleteStatementsInserted) {
-            writeDeleteStatements(fileWriter);
-        }
+        boolean writeDeleteStatementForCurrTable = true;
+        if (shouldDropTable(table)) {
+            /*fileWriter.write(DROP_TABLE_MARKER + table.getTableSchema() + "." + table.getTableName()
+                             + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);*/
+            Connection connection = null;
+            try {
+                connection = ConnectionPool.getConnection(dbConnection);
+                writeDropTableStatements(fileWriter, table.getFullTableName(), connection);
+                writeDeleteStatementForCurrTable = false;
+            } finally {
+                DbUtils.closeConnection(connection);
+            }
 
+        } /*else if (!this.deleteStatementsInserted) {
+            writeDeleteStatements(fileWriter);
+          }*/
+
+        // LOCK this single table for update. Lock is released after delete and then insert of backup data. 
+        // This leads to less potential data integrity issues. If another process updates tables at same time
+        // LOCK at once for all tables is not applicable as in reality DB connection hangs
         if (this.addLocks && table.isLockTable()) {
             fileWriter.write("LOCK TABLES `" + table.getTableName() + "` WRITE;" + EOL_MARKER
+                             + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
+        }
+        if (this.includeDeleteStatements && writeDeleteStatementForCurrTable) {
+            fileWriter.write("DELETE FROM `" + table.getTableName() + "`;" + EOL_MARKER
                              + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
         }
 
@@ -228,6 +265,7 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
             if (this.addLocks && table.isLockTable()) {
                 fileWriter.write("LOCK TABLES `" + table.getTableName() + "` WRITE;" + EOL_MARKER
                                  + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
+
             }
         }
 
@@ -262,29 +300,37 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
                 insertStatement.delete(insertStatement.length() - 1, insertStatement.length());
                 insertStatement.append(insertEnd);
 
-                fileWriter.write(insertStatement.toString());
+                fileWriter.write(StringUtils.escapeNonPrintableAsciiCharacters(insertStatement.toString()));
                 fileWriter.flush();
             }
         }
 
+        // unlock table
         if (this.addLocks && table.isLockTable()) {
             fileWriter.write("UNLOCK TABLES;" + EOL_MARKER + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
         }
         fileWriter.write(AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
     }
 
+    private void writeDropTableStatements( Writer fileWriter, String fullTableName,
+                                           Connection connection ) throws IOException {
+
+        String tableName = fullTableName;
+        // generate script for restoring the exact table
+        String generateTableScript = generateTableScript(tableName, connection);
+
+        // drop the table
+        fileWriter.write("DROP TABLE " + tableName + ";" + EOL_MARKER + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
+
+        // create new table
+        fileWriter.write(generateTableScript + EOL_MARKER + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
+
+    }
+
     @Override
     protected void writeDeleteStatements( Writer fileWriter ) throws IOException {
 
-        if (this.includeDeleteStatements) {
-            for (Entry<String, DbTable> entry : dbTables.entrySet()) {
-                DbTable dbTable = entry.getValue();
-                fileWriter.write("DELETE FROM `" + dbTable.getTableName() + "`;" + EOL_MARKER
-                                 + AtsSystemProperties.SYSTEM_LINE_SEPARATOR);
-            }
-            this.deleteStatementsInserted = true;
-        }
-
+        // Empty. Delete and lock are handled per table in writeTableToFile 
     }
 
     // escapes the characters in the value string, according to the MySQL manual. This
@@ -384,6 +430,9 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
     protected String disableForeignKeyChecksEnd() {
 
         return "";
+        // TODO: disable foreign checks in current way is session-wide and code relies that at the end it should be reset.
+        // better use this explicitly to know potential errors on commit
+        // return "SET FOREIGN_KEY_CHECKS = 1;" + EOL_MARKER + ATSSystemProperties.SYSTEM_LINE_SEPARATOR;
     }
 
     private boolean checkDriverVersion( MysqlDbProvider dbProvider ) {
@@ -415,4 +464,55 @@ class MysqlEnvironmentHandler extends AbstractEnvironmentHandler {
         return true;
     }
 
+    // DROP table (fast cleanup) functionality methods
+    private void dropAndRecreateTable( Connection connection, String table, String schema ) {
+
+        String tableName = schema + "." + table;
+        // generate script for restoring the exact table
+        String generateTableScript = generateTableScript(tableName, connection);
+
+        // drop the table
+        executeUpdate("DROP TABLE " + tableName + ";", connection);
+
+        // create new table
+        executeUpdate(generateTableScript, connection);
+    }
+
+    private String generateTableScript( String tableName, Connection connection ) throws DbException {
+
+        CallableStatement callableStatement = null;
+        ResultSet rs = null;
+        try {
+            String query = "SHOW CREATE TABLE " + tableName + ";";
+            callableStatement = connection.prepareCall(query);
+
+            rs = callableStatement.executeQuery();
+            String createQuery = new String();
+            if (rs.next()) {
+                createQuery = rs.getString(2);
+            }
+
+            return createQuery;
+
+        } catch (Exception e) {
+            throw new DbException("Error while generating script for the table '" + tableName + "'.", e);
+        } finally {
+            DbUtils.closeStatement(callableStatement);
+        }
+    }
+
+    private void executeUpdate( String query, Connection connection ) throws DbException {
+
+        PreparedStatement stmnt = null;
+        try {
+            stmnt = connection.prepareStatement(query);
+            stmnt.executeUpdate();
+        } catch (SQLException e) {
+            throw new DbException(
+                                  "SQL errorCode=" + e.getErrorCode() + " sqlState=" + e.getSQLState() + " "
+                                  + e.getMessage(), e);
+        } finally {
+            DbUtils.closeStatement(stmnt);
+        }
+    }
 }

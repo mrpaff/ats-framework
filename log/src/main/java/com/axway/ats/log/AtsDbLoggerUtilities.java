@@ -18,7 +18,6 @@ package com.axway.ats.log;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.net.ConnectException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -27,34 +26,40 @@ import java.util.List;
 import org.apache.commons.io.IOUtils;
 import org.apache.http.HttpEntity;
 import org.apache.http.HttpResponse;
-import org.apache.http.client.ClientProtocolException;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.mime.HttpMultipartMode;
 import org.apache.http.entity.mime.MultipartEntityBuilder;
 import org.apache.http.impl.client.CloseableHttpClient;
 import org.apache.http.impl.client.HttpClients;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.PublicAtsApi;
 import com.axway.ats.core.filesystem.LocalFileSystemOperations;
 import com.axway.ats.log.appenders.ActiveDbAppender;
 
+/**
+ * Utility methods for attaching info into ATS TestExplorer database. <br />
+ * <em>Note</em>: Currently it is expected that DB and TestExplorer application run on the same host.
+ */
 @PublicAtsApi
 public class AtsDbLoggerUtilities {
 
-    private static final Logger logger                     = Logger.getLogger(AtsDbLoggerUtilities.class);
+    private static final Logger logger                     = LogManager.getLogger(AtsDbLoggerUtilities.class);
 
-    private final long          MAX_FILE_SIZE              = 10 * 1024 * 1024;                                                 // 10MB
+    private final long          MAX_FILE_SIZE              = 10 * 1024 * 1024;                                                // 10MB
 
-    private static String       ERR_MSG_PREFIX             = "Cannot attach file \"{FILE}\" to the testcase \"{testcaseID}\" ";
+    private static String       ERR_MSG_PREFIX             = "Cannot attach file \"{FILE}\" to the testcase \"{testcaseID}\"";
 
     private static int          DEFAULT_TEST_EXPLORER_PORT = 80;
 
+    private String              currentErrMsgPrefix        = null;
+
     /**
      * Attach a local file to the current test case in the Test Explorer DB.
-     * </br>It is expected to have Test Explorer running on port 80.
-     * </br>The file must not be bigger than 10MB
+     * <br>It is expected to have Test Explorer running on port 80.
+     * <br>The file must not be bigger than 10MB
      * 
      * @param fileLocation the absolute path to the file
      * @param testExplorerContextName the name of the web application, e.g. "TestExplorer" or "TestExplorer-4.0.0" etc.
@@ -70,10 +75,10 @@ public class AtsDbLoggerUtilities {
 
     /**
      * Attach a local file to the current test case in the Test Explorer DB.
-     * </br>The file must not be bigger than 10MB
+     * <br>The file must not be bigger than 10MB
      * 
      * @param fileLocation the absolute path to the file
-     * @param testExplorerContextName the name of the web application, e.g. "TestExplorer" or "TestExplorer-4.0.0" etc.
+     * @param testExplorerContextName the name of the web application context, e.g. "TestExplorer" or "TestExplorer-4.0.0" etc.
      * @param testExplorerPort the port of the web application, e.g. 8080
      * @return TRUE if the operation was successful and false if not. A warning will be logged on failure.
      */
@@ -88,13 +93,13 @@ public class AtsDbLoggerUtilities {
     }
 
     /**
-     * Attach a local file to the a testcase in the Test Explorer DB.
-     * </br>It is expected to have Test Explorer running on port 80.
-     * </br>The file must not be bigger than 10MB
+     * Attach( upload) a local file to the a testcase in the Test Explorer DB.
+     * <br>It is expected to have Test Explorer running on port 80 or alternatively use {{@link #attachFileToTestcase(int, String, String, int)}}
+     * <br>The file must not be bigger than 10MB
      * 
-     * @param testcaseId the testcase id to which the file will be attached
+     * @param testcaseId the testcase ID to which the file will be attached
      * @param fileLocation the absolute path to the file
-     * @param testExplorerContextName the name of the web application, e.g. "TestExplorer" or "TestExplorer-4.0.0" etc.
+     * @param testExplorerContextName the name of the web application context, e.g. "TestExplorer" or "TestExplorer-4.0.0" etc.
      * @return TRUE if the operation was successful and false if not. A warning will be logged on failure.
      */
     @PublicAtsApi
@@ -107,7 +112,7 @@ public class AtsDbLoggerUtilities {
 
     /**
      * Attach a local file to the a testcase in the Test Explorer DB.
-     * </br>The file must not be bigger than 10MB
+     * <br>The file must not be bigger than 10MB
      * 
      * @param testcaseId the testcase id to which the file will be attached
      * @param fileLocation the absolute path to the file
@@ -122,7 +127,7 @@ public class AtsDbLoggerUtilities {
                                          int testExplorerPort ) {
 
         fileLocation = fileLocation.replace("\\", "/");
-        ERR_MSG_PREFIX = ERR_MSG_PREFIX.replace("{FILE}", fileLocation).replace("{testcaseID}", testcaseId + "");
+        currentErrMsgPrefix = ERR_MSG_PREFIX.replace("{FILE}", fileLocation).replace("{testcaseID}", testcaseId + "");
 
         if (!checkFileExist(fileLocation)) {
             return false;
@@ -133,20 +138,19 @@ public class AtsDbLoggerUtilities {
 
         ActiveDbAppender dbAppender = ActiveDbAppender.getCurrentInstance();
         if (dbAppender == null) {
-            logger.warn(ERR_MSG_PREFIX + "Perhaps the database logging is turned off");
+            logger.warn(currentErrMsgPrefix + ". Perhaps the database logging is turned off");
             return false;
         }
 
         final int runId = dbAppender.getRunId();
         final int suiteId = dbAppender.getSuiteId();
 
-        /* since the user provide testcase ID,
-         * do we have to check if that testcase ID, refers to a testcase, which is related to the current run and suite
-        */
-
+        /* Since the user provides testcase ID, we have to validate it - whether it refers to a testcase part of 
+         * the current run and suite
+         */
         if (runId < 1 || suiteId < 1 || testcaseId < 1) {
-            logger.warn(ERR_MSG_PREFIX
-                        + "Perhaps the database logging is turned off or you are trying to log while a testcase is not yet started");
+            logger.warn(currentErrMsgPrefix + ". Perhaps the database logging is turned off or you are trying to "
+                        + "log while a testcase is not yet started");
             return false;
         }
 
@@ -164,7 +168,7 @@ public class AtsDbLoggerUtilities {
             if (!isURLConnetionAvailable(url)) {
                 return false;
             }
-            logger.debug("POSTing " + fileLocation + " on " + URL);
+            logger.debug("POSTing " + fileLocation + " to " + URL);
 
             File file = new File(fileLocation);
             MultipartEntityBuilder builder = MultipartEntityBuilder.create();
@@ -180,19 +184,12 @@ public class AtsDbLoggerUtilities {
             post.setEntity(entity);
             return checkPostExecutedSuccessfully(client.execute(post), fileLocation, testcaseId);
         } catch (FileNotFoundException fnfe) {
-            logger.warn(ERR_MSG_PREFIX + "it does not exist on the local file system", fnfe);
-            return false;
-        } catch (ClientProtocolException cpe) {
-            logger.warn(ERR_MSG_PREFIX + "Upload to \"" + url + "\" failed", cpe);
-            return false;
-        } catch (ConnectException ce) {
-            logger.warn(ERR_MSG_PREFIX + "Upload to \"" + url + "\" failed", ce);
+            logger.warn(currentErrMsgPrefix + ". It does not exist on the local file system", fnfe);
             return false;
         } catch (IOException ioe) {
-            logger.warn(ERR_MSG_PREFIX + "Upload to \"" + url + "\" failed", ioe);
+            logger.warn(currentErrMsgPrefix + ". Upload to \"" + url + "\" failed", ioe);
             return false;
         }
-
     }
 
     private boolean checkFileExist(
@@ -201,7 +198,7 @@ public class AtsDbLoggerUtilities {
         boolean exists = new LocalFileSystemOperations().doesFileExist(fileLocation);
 
         if (!exists) {
-            logger.warn(ERR_MSG_PREFIX + "it does not exist on the local file system");
+            logger.warn(currentErrMsgPrefix + ". It does not exist on the local file system.");
         }
         return exists;
     }
@@ -213,8 +210,8 @@ public class AtsDbLoggerUtilities {
         boolean goodSize = fileSize <= MAX_FILE_SIZE;
 
         if (!goodSize) {
-            logger.warn(ERR_MSG_PREFIX + "as its size of \"" + fileSize
-                        + "\" bytes is larger than the allowed 10MB");
+            logger.warn(currentErrMsgPrefix + ". Its size of \"" + fileSize
+                        + "\" bytes is larger than the max allowed " + MAX_FILE_SIZE);
         }
 
         return goodSize;
@@ -232,16 +229,14 @@ public class AtsDbLoggerUtilities {
                     logger.info(line);
                 }
             } catch (Exception e) {
-                logger.error("unable to read response entity", e);
+                logger.error("Error while reading response for file attach", e);
             }
-            logger.warn("File \"" + fileLocation
-                        + "\" will not be attached to the current test, due to error in saving the file. ");
+            logger.error("File attach error for file " + fileLocation);
             return false;
         } else {
-            logger.info("Successfully attached \"" + fileLocation + "\" to testcase with id \"" + testcaseId + "\"");
+            logger.info("Successfully attached \"" + fileLocation + "\" to testcase with ID \"" + testcaseId + "\"");
             return true;
         }
-
     }
 
     private boolean isURLConnetionAvailable(
@@ -252,14 +247,16 @@ public class AtsDbLoggerUtilities {
             cc.setRequestMethod("HEAD");
 
             if (cc.getResponseCode() != 200) {
-                logger.warn(ERR_MSG_PREFIX + "Upload URL \"" + url + "\" is not defined right");
+                logger.error(currentErrMsgPrefix + ". Upload URL \"" + url + "\" is not defined right. Check TestExplorer's "
+                            + "context name, HTTP port and host/IP. Details: Connect successful but test HEAD request "
+                            + "received HTTP status code " + cc.getResponseCode() + " instead of expected 200 (OK).");
                 return false;
             }
         } catch (MalformedURLException mue) {
-            logger.warn(ERR_MSG_PREFIX + "Upload URL \"" + url + "\" is malformed", mue);
+            logger.error(currentErrMsgPrefix + ". Upload URL \"" + url + "\" is malformed", mue);
             return false;
         } catch (IOException ioe) {
-            logger.warn(ERR_MSG_PREFIX + "POST failed to URL \"" + url + "\"", ioe);
+            logger.error(currentErrMsgPrefix + ". Check request to URL \"" + url + "\" failed", ioe);
             return false;
         }
         return true;

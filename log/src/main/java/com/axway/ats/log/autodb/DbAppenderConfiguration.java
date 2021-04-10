@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2019 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,36 +20,40 @@ import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
 import java.io.Serializable;
 
-import org.apache.log4j.Level;
-import org.apache.log4j.Priority;
+import org.apache.logging.log4j.Level;
 
+import com.axway.ats.common.dbaccess.DbKeys;
 import com.axway.ats.core.dbaccess.mssql.DbConnSQLServer;
 import com.axway.ats.core.log.AtsConsoleLogger;
 import com.axway.ats.log.autodb.exceptions.InvalidAppenderConfigurationException;
+import com.axway.ats.log.autodb.io.AbstractDbAccess;
+import com.axway.ats.log.model.SystemLogLevel;
 
 /**
  * Hold the configuration data for this db appender
  */
 public class DbAppenderConfiguration implements Serializable {
 
-    private static final long  serialVersionUID                      = 4786587768915142179L;
+    private static final long serialVersionUID                      = 4786587768915142179L;
     //connection parameters
-    private String             host;
-    private String             port;
-    private String             database;
-    private String             user;
-    private String             password;
-    private String             mode                                  = "";
+    private String            host;
+    private String            port                                  = null;
+    private String            database;
+    private String            user;
+    private String            password;
+    private String            mode                                  = "";
+    private String            driver                                = DbKeys.SQL_SERVER_DRIVER_JTDS;
+    private String            chunkSize;
 
     // the capacity of our logging queue
-    private String             maxNumberLogEvents                    = "";
-    private static final int   DEFAULT_MAX_NUMBER_PENDING_LOG_EVENTS = 100000;
+    private static final int  DEFAULT_MAX_NUMBER_PENDING_LOG_EVENTS = 100000;
+    private String            maxNumberLogEvents                    = String.valueOf(DEFAULT_MAX_NUMBER_PENDING_LOG_EVENTS);
 
     //are checkpoints enabled
-    private boolean            enableCheckpoints                     = true;
+    private boolean           enableCheckpoints                     = true;
 
     //the effective logging level. Serialized only by int value to prevent classloading issues of Priority/Level classes
-    transient private Priority loggingThreshold;
+    private Level             loggingThreshold;
 
     public String getHost() {
 
@@ -115,7 +119,7 @@ public class DbAppenderConfiguration implements Serializable {
     }
 
     /**
-     * Read the "events" parameter value from log4j.xml.
+     * Read the "events" parameter value from log4j2.xml.
      * This value will be used for capacity of our logging queue.
      * 
      * Note: the new value cannot be bellow the default capacity.
@@ -172,15 +176,35 @@ public class DbAppenderConfiguration implements Serializable {
         this.enableCheckpoints = enableCheckpoints;
     }
 
-    public Priority getLoggingThreshold() {
+    public Level getLoggingThreshold() {
 
         return loggingThreshold;
     }
 
     public void setLoggingThreshold(
-                                     Priority loggingThreshold ) {
+                                     Level loggingThreshold ) {
 
         this.loggingThreshold = loggingThreshold;
+    }
+
+    public String getDriver() {
+
+        return driver;
+    }
+
+    public void setDriver( String driver ) {
+
+        this.driver = driver;
+    }
+
+    public String getChunkSize() {
+
+        return chunkSize;
+    }
+
+    public void setChunkSize( String chunkSize ) {
+
+        this.chunkSize = chunkSize;
     }
 
     /**
@@ -195,9 +219,10 @@ public class DbAppenderConfiguration implements Serializable {
         }
 
         if (port == null) {
-            new AtsConsoleLogger(getClass()).warn("Database port was not specified in log4j.xml. We will set it to the default one for MSSQL databases ("
+            new AtsConsoleLogger(getClass()).warn("Database port (\"port\" property) is not specified in log4j2.xml file, section for ATS ActiveDbAppender. "
+                                                  + "Assuming default value for Microsoft SQL Server databases ("
                                                   + DbConnSQLServer.DEFAULT_PORT + ")");
-            port = String.valueOf(DbConnSQLServer.DEFAULT_PORT);
+            this.port = DbConnSQLServer.DEFAULT_PORT + "";
         }
 
         if (database == null) {
@@ -210,6 +235,14 @@ public class DbAppenderConfiguration implements Serializable {
 
         if (password == null) {
             throw new InvalidAppenderConfigurationException("password");
+        }
+
+        if (driver == null) {
+            this.driver = DbKeys.SQL_SERVER_DRIVER_JTDS;
+        }
+
+        if (chunkSize == null) {
+            this.chunkSize = AbstractDbAccess.DEFAULT_CHUNK_SIZE + "";
         }
     }
 
@@ -261,6 +294,14 @@ public class DbAppenderConfiguration implements Serializable {
             return false;
         }
 
+        if (!driver.equalsIgnoreCase(otherConfig.driver)) { // driver value is case-insensitive
+            return false;
+        }
+
+        if (!chunkSize.equals(otherConfig.chunkSize)) {
+            return false;
+        }
+
         return true;
     }
 
@@ -275,7 +316,7 @@ public class DbAppenderConfiguration implements Serializable {
 
         s.defaultReadObject();
         int levelInt = s.readInt();
-        loggingThreshold = Level.toLevel(levelInt);
+        loggingThreshold = SystemLogLevel.toLevel(levelInt);
     }
 
     /**
@@ -291,7 +332,7 @@ public class DbAppenderConfiguration implements Serializable {
             // should be set in RemoteLoggingConfiguration
             throw new IllegalStateException("Logging level should not be null");
         }
-        s.writeInt(loggingThreshold.toInt());
+        s.writeInt(loggingThreshold.intLevel());
     }
 
 }

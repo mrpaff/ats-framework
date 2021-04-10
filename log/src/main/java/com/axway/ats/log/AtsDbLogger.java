@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2021 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -15,19 +15,22 @@
  */
 package com.axway.ats.log;
 
-import java.util.Enumeration;
+import java.util.List;
 
-import org.apache.log4j.Appender;
-import org.apache.log4j.LogManager;
-import org.apache.log4j.Logger;
-import org.apache.log4j.spi.LoggingEvent;
+import org.apache.logging.log4j.Level;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.logging.log4j.core.LogEvent;
 
 import com.axway.ats.common.PublicAtsApi;
+import com.axway.ats.core.threads.ThreadsPerCaller;
 import com.axway.ats.log.appenders.ActiveDbAppender;
 import com.axway.ats.log.appenders.PassiveDbAppender;
 import com.axway.ats.log.autodb.TestCaseState;
+import com.axway.ats.log.autodb.entities.TestcaseMetainfo;
 import com.axway.ats.log.autodb.events.AddRunMetainfoEvent;
 import com.axway.ats.log.autodb.events.AddScenarioMetainfoEvent;
+import com.axway.ats.log.autodb.events.AddTestcaseMetainfoEvent;
 import com.axway.ats.log.autodb.events.CleanupLoadQueueStateEvent;
 import com.axway.ats.log.autodb.events.ClearScenarioMetainfoEvent;
 import com.axway.ats.log.autodb.events.DeleteTestCaseEvent;
@@ -58,40 +61,53 @@ import com.axway.ats.log.autodb.events.StartTestCaseEvent;
 import com.axway.ats.log.autodb.events.UpdateRunEvent;
 import com.axway.ats.log.autodb.events.UpdateSuiteEvent;
 import com.axway.ats.log.autodb.events.UpdateTestcaseEvent;
+import com.axway.ats.log.autodb.exceptions.DatabaseAccessException;
+import com.axway.ats.log.autodb.model.IDbReadAccess;
 import com.axway.ats.log.model.CheckpointResult;
 import com.axway.ats.log.model.LoadQueueResult;
-import com.axway.ats.log.model.SystemLogLevel;
 import com.axway.ats.log.model.TestCaseResult;
 
+/**
+ * Utility class for working with the ATS logging system
+ * 
+ */
 @PublicAtsApi
 public class AtsDbLogger {
 
     private final static String ATS_DB_LOGGER_CLASS_NAME = AtsDbLogger.class.getName();
 
+    /**
+     * Flag that is used to log WARN for not attached ATS DB logger only once
+     */
+    private static boolean      isWarningMessageLogged   = false;
+
     protected Logger            logger;
 
-    private AtsDbLogger( Logger logger, boolean skipAppenderCheck) {
+    private AtsDbLogger( Logger logger, boolean skipAppenderCheck ) {
 
         this.logger = logger;
-        // check if the ActiveDbAppender is specified in log4j.xml
+        // check if the ActiveDbAppender is specified in log4j2.xml
         if (!skipAppenderCheck) {
             if (!ActiveDbAppender.isAttached) {
-                throw new IllegalStateException("ATS Database appender not specified in log4j.xml file.");
+                if (!isWarningMessageLogged) {
+                    this.logger.warn(
+                                     "ATS Database appender is not attached in root logger element in log4j2.xml file. "
+                                     + "No test data will be sent to ATS Log database and some methods from '"
+                                     + AtsDbLogger.class.getName() + "' class will not work as expected");
+                    isWarningMessageLogged = true;
+                }
             }
         }
-
     }
 
     @PublicAtsApi
-    public static synchronized AtsDbLogger getLogger(
-                                                      String name ) {
+    public static synchronized AtsDbLogger getLogger( String name ) {
 
-        return new AtsDbLogger(Logger.getLogger(name), false);
+        return new AtsDbLogger(LogManager.getLogger(name), false);
     }
 
     @PublicAtsApi
-    public static synchronized AtsDbLogger getLogger(
-                                                      Logger logger ) {
+    public static synchronized AtsDbLogger getLogger( Logger logger ) {
 
         return new AtsDbLogger(logger, false);
     }
@@ -104,18 +120,18 @@ public class AtsDbLogger {
      *
      * */
     public static synchronized AtsDbLogger getLogger(
-                                                      String name, boolean skipAppenderCheck) {
+                                                      String name, boolean skipAppenderCheck ) {
 
-        return new AtsDbLogger(Logger.getLogger(name), skipAppenderCheck);
+        return new AtsDbLogger(LogManager.getLogger(name), skipAppenderCheck);
     }
 
     /**
      * This method is intended for internal (by ATS devs) usage only.
-     * @param logger the Apache log4j logger
+     * @param logger the Apache log4j2 logger
      * @param skipAppenderCheck enable/disable check for availability of db appender
-     * */
+     */
     public static synchronized AtsDbLogger getLogger(
-                                                      Logger logger,  boolean skipAppenderCheck ) {
+                                                      Logger logger, boolean skipAppenderCheck ) {
 
         return new AtsDbLogger(logger, skipAppenderCheck);
     }
@@ -135,15 +151,7 @@ public class AtsDbLogger {
                        Object message,
                        Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.DEBUG,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.debug(message, t);
     }
 
     /**
@@ -154,15 +162,7 @@ public class AtsDbLogger {
     public void debug(
                        Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.DEBUG,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.debug(message);
     }
 
     /**
@@ -175,15 +175,7 @@ public class AtsDbLogger {
                        Object message,
                        Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.ERROR,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.error(message, t);
     }
 
     /**
@@ -194,15 +186,7 @@ public class AtsDbLogger {
     public void error(
                        Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.ERROR,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.error(message);
     }
 
     /**
@@ -215,15 +199,7 @@ public class AtsDbLogger {
                        Object message,
                        Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.FATAL,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.fatal(message, t);
     }
 
     /**
@@ -234,15 +210,7 @@ public class AtsDbLogger {
     public void fatal(
                        Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.FATAL,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.fatal(message);
     }
 
     /**
@@ -255,30 +223,25 @@ public class AtsDbLogger {
                       Object message,
                       Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.INFO,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.info(message, t);
     }
 
     public void info(
                       Object message,
                       boolean sendRunMessage ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.INFO,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         sendRunMessage));
+        if (sendRunMessage) {
+            sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
+                                             logger,
+                                             Level.INFO,
+                                             getNonNullToString(message),
+                                             null,
+                                             false,
+                                             sendRunMessage));
+        } else {
+            logger.info(message);
+        }
+
     }
 
     /**
@@ -289,15 +252,7 @@ public class AtsDbLogger {
     public void info(
                       Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.INFO,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.info(message);
     }
 
     /**
@@ -310,15 +265,7 @@ public class AtsDbLogger {
                        Object message,
                        Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.TRACE,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.trace(message, t);
     }
 
     /**
@@ -329,15 +276,7 @@ public class AtsDbLogger {
     public void trace(
                        Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.TRACE,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.trace(message);
     }
 
     /**
@@ -350,15 +289,7 @@ public class AtsDbLogger {
                       Object message,
                       Throwable t ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.WARN,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         t,
-                                         false,
-                                         false));
+        logger.warn(message, t);
     }
 
     /**
@@ -369,15 +300,7 @@ public class AtsDbLogger {
     public void warn(
                       Object message ) {
 
-        sendEvent(new InsertMessageEvent(ATS_DB_LOGGER_CLASS_NAME,
-                                         logger,
-                                         SystemLogLevel.WARN,
-                                         message.toString() != null
-                                                                    ? message.toString()
-                                                                    : "",
-                                         null,
-                                         false,
-                                         false));
+        logger.warn(message);
     }
 
     /**
@@ -427,6 +350,7 @@ public class AtsDbLogger {
                                 String metaKey,
                                 String metaValue ) {
 
+        // TODO Check on lower level that there is no existing metaKey with same value. Otherwise UPDATE should be performed
         sendEvent(new AddRunMetainfoEvent(ATS_DB_LOGGER_CLASS_NAME, logger, metaKey, metaValue));
     }
 
@@ -478,15 +402,18 @@ public class AtsDbLogger {
     }
 
     /**
-     * Updates a suite
-     * 
-     * @param packageName new name for the package
-     * @param suiteName new name for the suite
+     * Update the static information about the current suite.
+     * <br><b>NOTE</b>: This method can be called at any time after a suite is started.
+     *
+     * <br><br><b>NOTE</b>: Pass 'null' value to any parameter which must not be modified.
+     *
+     * @param newSuiteName the new value to set for the name of the current suite
+     * @param newUserNote  the new value to set for the user note of the current suite
      */
-    public void updateSuite( String packageName,
-                             String suiteName ) {
+    public void updateSuite( String newSuiteName,
+                             String newUserNote ) {
 
-        sendEvent(new UpdateSuiteEvent(ATS_DB_LOGGER_CLASS_NAME, logger, suiteName, packageName));
+        sendEvent(new UpdateSuiteEvent(ATS_DB_LOGGER_CLASS_NAME, logger, newSuiteName, newUserNote));
     }
 
     /**
@@ -516,6 +443,7 @@ public class AtsDbLogger {
                                      String metaKey,
                                      String metaValue ) {
 
+        // TODO Check on lower level that there is no existing metaKey with same value. Otherwise UPDATE should be performed
         sendEvent(new AddScenarioMetainfoEvent(ATS_DB_LOGGER_CLASS_NAME, logger, metaKey, metaValue));
     }
 
@@ -595,6 +523,38 @@ public class AtsDbLogger {
                                 int testCaseId ) {
 
         sendEvent(new DeleteTestCaseEvent(ATS_DB_LOGGER_CLASS_NAME, logger, testCaseId));
+    }
+
+    /**
+     * Add some meta info about a testcase.
+     * Must be called inside @Test/@BeforeMethod/@AfterMethod
+     * 
+     * @param metaKey key
+     * @param metaValue value
+     */
+    @PublicAtsApi
+    public void addTestcaseMetainfo(
+                                     String metaKey,
+                                     String metaValue ) {
+
+        // TODO Check on lower level that there is no existing metaKey with same value. Otherwise UPDATE should be performed
+        sendEvent(new AddTestcaseMetainfoEvent(ATS_DB_LOGGER_CLASS_NAME, logger, metaKey, metaValue));
+    }
+
+    /**
+     * Add some meta info about a testcase.
+     * Must be called while there is an existing testcase
+     * 
+     * @param metaKey key
+     * @param metaValue value
+     */
+    public void addTestcaseMetainfo(
+                                     int testcaseId,
+                                     String metaKey,
+                                     String metaValue ) {
+
+        // TODO Check on lower level that there is no existing metaKey with same value. Otherwise UPDATE should be performed
+        sendEvent(new AddTestcaseMetainfoEvent(ATS_DB_LOGGER_CLASS_NAME, logger, testcaseId, metaKey, metaValue));
     }
 
     /**
@@ -904,36 +864,33 @@ public class AtsDbLogger {
     }
 
     /**
-     * This event can not go through the regular way of sending log4j events in the case with Passive DB appenders. 
+     * This event can not go through the regular way of sending log4j2 events in the case with Passive DB appenders. 
      * The reason is that we have to evaluate the result after the work of each passive appender and stop
      * calling these appenders when the first one(the only one serving this caller) has processed the event. 
      */
-    @SuppressWarnings( "unchecked")
     public TestCaseState getCurrentTestCaseState() {
 
         GetCurrentTestCaseEvent event = new GetCurrentTestCaseEvent(ATS_DB_LOGGER_CLASS_NAME, logger);
 
-        Enumeration<Appender> appenders = Logger.getRootLogger().getAllAppenders();
-        while (appenders.hasMoreElements()) {
-            Appender appender = appenders.nextElement();
+        PassiveDbAppender passiveDbAppender = PassiveDbAppender.getCurrentInstance(ThreadsPerCaller.getCaller());
 
-            if (appender instanceof ActiveDbAppender) {
-                // Comes here on Test Executor side. There is just 1 Active appender
-                return ((ActiveDbAppender) appender).getCurrentTestCaseState(event).getTestCaseState();
-            } else if (appender instanceof PassiveDbAppender) {
-                // Comes here on Agent side. There will be 1 Passive appender per caller
+        if (passiveDbAppender != null) {
 
-                // Pass the event to any existing appender.
-                // The correct one will return result, wrong appenders will return null.
-                GetCurrentTestCaseEvent resultEvent = ((PassiveDbAppender) appender).getCurrentTestCaseState(event);
-                if (resultEvent != null) {
-                    // we found the right Passive appender
-                    return resultEvent.getTestCaseState();
-                }
+            // assume we are on the ATS Agent side
+            GetCurrentTestCaseEvent resultEvent = passiveDbAppender.getCurrentTestCaseState(event);
+            if (resultEvent != null) {
+                // we found the right Passive appender
+                return resultEvent.getTestCaseState();
+            }
+        } else {
+
+            ActiveDbAppender activeAppender = ActiveDbAppender.getCurrentInstance();
+
+            if (activeAppender != null) {
+                return activeAppender.getCurrentTestCaseState(event).getTestCaseState();
             }
         }
 
-        // no appropriate appender found
         return null;
     }
 
@@ -942,22 +899,67 @@ public class AtsDbLogger {
         return logger.isDebugEnabled();
     }
 
+    /*
+     * Reading methods
+     * */
+
+    /**
+     * Retrieve {@link TestcaseMetainfo} for current testcase. Works on the Test Executor only.
+     * Note that this method always reads from DB in order to make sure that such information is already in database. 
+     * For cases where metainfo should be read often it is recommended that values are cached.
+     * @return list of {@link TestcaseMetainfo}
+     * @throws DatabaseAccessException in case of a DB error
+     */
+    @PublicAtsApi
+    public List<TestcaseMetainfo> getTestcaseMetainfo() throws DatabaseAccessException {
+
+        int testcaseId = ActiveDbAppender.getCurrentInstance().getTestCaseId();
+        return getTestcaseMetainfo(testcaseId);
+    }
+
+    /**
+     * Retrieve {@link TestcaseMetainfo} for a particular testcase. Works on the Test Executor only.
+     * @param testcaseId - the testcase ID. For current testcase ID, you may use 
+     * <pre>{@code ActiveDbAppender.getCurrentInstance().getTestCaseId()}</pre>
+     * Note that this method always reads from DB in order to make sure that such information is already in database. 
+     * For cases where metainfo should be read often it is recommended that values are cached.
+     * @return list of {@link TestcaseMetainfo}
+     * @throws DatabaseAccessException in case of a DB error
+     */
+    @PublicAtsApi
+    public List<TestcaseMetainfo> getTestcaseMetainfo( int testcaseId ) throws DatabaseAccessException {
+
+        IDbReadAccess dbReadAccess = ActiveDbAppender.getCurrentInstance().obtainDbReadAccessObject();
+        List<TestcaseMetainfo> metainfo = dbReadAccess.getTestcaseMetainfo(testcaseId);
+        return metainfo;
+    }
+
     /**
      * Send an event to the logging system
      *
      * @param event the event to send
      */
     private void sendEvent(
-                            LoggingEvent event ) {
+                            LogEvent event ) {
 
         // check if this level is allowed for the repository at all
-        if (LogManager.getLoggerRepository().isDisabled(event.getLevel().toInt())) {
+        if (Log4j2Utils.getRootLogger().getLevel().isMoreSpecificThan(event.getLevel())) {
             return;
         }
 
         // check if the event level is allowed for this logger
-        if (event.getLevel().isGreaterOrEqual(logger.getEffectiveLevel())) {
-            logger.callAppenders(event);
+        if (event.getLevel().isMoreSpecificThan(logger.getLevel())) {
+            Log4j2Utils.getLoggerConfig(logger.getName()).log(event);
         }
+    }
+
+    private String getNonNullToString( Object obj ) {
+
+        if (obj == null) {
+            return "";
+        } else {
+            return obj.toString(); // possibly this could also return null but seems not an issue
+        }
+
     }
 }

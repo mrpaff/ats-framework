@@ -38,7 +38,8 @@ import org.apache.http.client.methods.HttpPut;
 import org.apache.http.entity.ContentType;
 import org.apache.http.entity.FileEntity;
 import org.apache.http.util.EntityUtils;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.PublicAtsApi;
 import com.axway.ats.common.filetransfer.FileTransferException;
@@ -50,13 +51,13 @@ import com.axway.ats.core.utils.StringUtils;
 
 /**
  * An HTTP(s) client which inherits see the fully functional @see {@link HttpClient} but is targeted
- * in achieving simple file uploads and downloads.</br></br>
+ * in achieving simple file uploads and downloads.<br><br>
  * Its main methods follow the trivial <b>connect -> upload/download -> disconnect</b> logic
  */
 @PublicAtsApi
 public class FileTransferHttpClient extends HttpClient implements IFileTransferClient {
 
-    private static final Logger log                                   = Logger.getLogger(FileTransferHttpClient.class);
+    private static final Logger log                                   = LogManager.getLogger(FileTransferHttpClient.class);
 
     private static final int    DEFAULT_HTTP_PORT                     = 80;
 
@@ -75,6 +76,13 @@ public class FileTransferHttpClient extends HttpClient implements IFileTransferC
 
     public final static String  SOCKET_READ_TIMEOUT                   = "HTTP_HTTPS_SOCKET_READ_TIMEOUT";
 
+    /**
+     * Set the <strong>Transfer-Encoding</strong> value.<br> Currently the only supported value is <strong>chunked</strong>
+     * */
+    public static final String  TRANSFER_ENCODING_MODE                = "HTTP_HTTPS_TRANSFER_ENCODING_MODE";
+    public static final String  TRANSFER_ENCODING_MODE_CHUNKED        = "chunked";
+    private String              transferEncoding                      = null;
+
     public final static String  SOCKET_BUFFER_SIZE                    = "HTTP_SOCKET_BUFFER_SIZE";                         // used both for send and receive
     private final static int    SOCKET_BUFFER_SIZE_MAX_VALUE          = 4 * 1024 * 1024;
     private final static int    DEFAULT_SOCKET_BUFFER_SIZE            = 8196;
@@ -86,6 +94,7 @@ public class FileTransferHttpClient extends HttpClient implements IFileTransferC
      */
     @PublicAtsApi
     public FileTransferHttpClient() {
+
         super();
 
         setDefaults();
@@ -98,6 +107,7 @@ public class FileTransferHttpClient extends HttpClient implements IFileTransferC
      */
     @PublicAtsApi
     public FileTransferHttpClient( String url ) {
+
         super(url);
 
         setDefaults();
@@ -239,6 +249,12 @@ public class FileTransferHttpClient extends HttpClient implements IFileTransferC
         }
 
         FileEntity fileUploadEntity = new FileEntity(new File(localFile), this.contentType);
+        if (!StringUtils.isNullOrEmpty(this.transferEncoding)) {
+            if (this.transferEncoding.toLowerCase().contains(TRANSFER_ENCODING_MODE_CHUNKED)) {
+                fileUploadEntity.setChunked(true);
+                log.info("Transfer-Encoding set to '" + this.transferEncoding + "'");
+            }
+        }
         httpMethod.setEntity(fileUploadEntity);
 
         HttpResponse response = null;
@@ -497,9 +513,30 @@ public class FileTransferHttpClient extends HttpClient implements IFileTransferC
                 requestHeaders.add(new HttpHeader(headerString.substring(0, separatorIndex),
                                                   headerString.substring(separatorIndex + 1)));
             }
+        } else if (TRANSFER_ENCODING_MODE.equals(key)) {
+
+            boolean unsupportedValue = false;
+            if (value != null && value instanceof String) {
+                String strVal = (String) value;
+                if (TRANSFER_ENCODING_MODE_CHUNKED.equalsIgnoreCase(strVal)) {
+                    // set the transfer encoding
+                    this.transferEncoding = strVal;
+                } else {
+                    unsupportedValue = true;
+                }
+            } else {
+                unsupportedValue = true;
+            }
+
+            if (unsupportedValue) {
+                throw new IllegalArgumentException("Invalid value specified for Transfer-Encoding mode ('" + value
+                                                   + "'). Only '"
+                                                   + TRANSFER_ENCODING_MODE_CHUNKED + "' is supported");
+            }
+
         } else {
             throw new IllegalArgumentException("Unknown property with key '" + key + "' is passed. "
-                                               + "Use one of the HTTP_HTTPS_* constants for key and values in GenericFileTransferClient class");
+                                               + "Use one of the HTTP_HTTPS_* constants for key and values in FileTransferClient class");
         }
     }
 

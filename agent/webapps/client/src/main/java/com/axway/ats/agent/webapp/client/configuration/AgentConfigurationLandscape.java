@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2019 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -59,6 +59,9 @@ public class AgentConfigurationLandscape {
     // The protocol used to communicate with an Agent - "http" or "https"
     private String                                          protocol;
 
+    // the chunk size used for batch mode db logging
+    private int                                             chunkSize;
+
     /**
      * Get instance for a particular agent.
      * 
@@ -70,10 +73,10 @@ public class AgentConfigurationLandscape {
      */
     public static synchronized AgentConfigurationLandscape getInstance( String agent ) {
 
-        AgentConfigurationLandscape instance = instances.get( agent );
-        if( instance == null ) {
+        AgentConfigurationLandscape instance = instances.get(agent);
+        if (instance == null) {
             instance = new AgentConfigurationLandscape();
-            instances.put( agent, instance );
+            instances.put(agent, instance);
         }
 
         return instance;
@@ -86,12 +89,12 @@ public class AgentConfigurationLandscape {
      */
     public void cacheConfigurator( Configurator configurator ) {
 
-        if( configurator instanceof RemoteLoggingConfigurator ) {
-            loggingConfigurator = ( RemoteLoggingConfigurator ) configurator;
-        } else if( configurator instanceof AgentConfigurator ) {
-            agentConfigurator = ( AgentConfigurator ) configurator;
-        } else if( configurator instanceof GenericAgentConfigurator ) {
-            genericConfigurator = ( GenericAgentConfigurator ) configurator;
+        if (configurator instanceof RemoteLoggingConfigurator) {
+            loggingConfigurator = (RemoteLoggingConfigurator) configurator;
+        } else if (configurator instanceof AgentConfigurator) {
+            agentConfigurator = (AgentConfigurator) configurator;
+        } else if (configurator instanceof GenericAgentConfigurator) {
+            genericConfigurator = (GenericAgentConfigurator) configurator;
         }
     }
 
@@ -132,6 +135,23 @@ public class AgentConfigurationLandscape {
     public LogLevel getDbLogLevel() {
 
         return dbLoggerLevelSetFromTest;
+    }
+
+    /**
+     * Set the chunk size used for db logging in batch mode
+     * @param chunkSize
+     * */
+    public void setChunkSize( int chunkSize ) {
+
+        this.chunkSize = chunkSize;
+    }
+
+    /**
+     * @return the log level used for our DB appender
+     */
+    public int getChunkSize() {
+
+        return this.chunkSize;
     }
 
     /**

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -20,7 +20,9 @@ import java.io.FileNotFoundException;
 import java.util.HashMap;
 import java.util.Map;
 
-import org.apache.log4j.Logger;
+import com.axway.ats.core.utils.StringUtils;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.PublicAtsApi;
 import com.axway.ats.common.filesystem.EndOfLineStyle;
@@ -40,9 +42,9 @@ import com.axway.ats.core.validation.Validator;
  * Operations on the file system.
  * If an ATS Agent is given (by the appropriate constructor), we are working remotely.
  *
- * <br/><br/>Note: On error all methods in this class are likely to throw FileSystemOperationException
+ * <br><br>Note: On error all methods in this class are likely to throw FileSystemOperationException
  *
- * <br/><br/>
+ * <br><br>
  * <b>User guide</b>
  * <a href="https://axway.github.io/ats-framework/File-System-Operations.html">page</a>
  * related to this class
@@ -50,18 +52,23 @@ import com.axway.ats.core.validation.Validator;
 @PublicAtsApi
 public class FileSystemOperations {
 
-    private static final Logger        log                      = Logger.getLogger(FileSystemOperations.class);
+    private static final Logger log = LogManager.getLogger(FileSystemOperations.class);
 
-    private static final String        LOCAL_HOST_NAME_AND_PORT = HostUtils.LOCAL_HOST_NAME + ":0000";
+    private static final String LOCAL_HOST_NAME_AND_PORT = HostUtils.LOCAL_HOST_NAME + ":0000";
 
-    private String                     atsAgent;
+    private String atsAgent;
 
     /**
      * A map with file markers. Contains [fileName, lastFileReadPosition] pairs
      */
-    private Map<String, FileMatchInfo> savedFileMatchDetails    = new HashMap<String, FileMatchInfo>();
+    private Map<String, FileMatchInfo> savedFileMatchDetails = new HashMap<String, FileMatchInfo>();
 
-    private boolean                    failOnError              = true;
+    private boolean failOnError       = true;
+    /**
+     * Passive mode for copy operations. If true - whether this agent prefers NOT to open local data ports for file copy
+     * operations. In that case the test executor should open the data port for sending file to the agent.
+     */
+    private boolean copyInPassiveMode = false;
 
     /**
      * Constructor when working on the local host
@@ -80,7 +87,8 @@ public class FileSystemOperations {
      * </p>
      */
     @PublicAtsApi
-    public FileSystemOperations( @Validate( name = "atsAgent", type = ValidationType.STRING_SERVER_WITH_PORT) String atsAgent ) {
+    public FileSystemOperations(
+            @Validate( name = "atsAgent", type = ValidationType.STRING_SERVER_WITH_PORT ) String atsAgent ) {
 
         // validate input parameters
         atsAgent = HostUtils.getAtsAgentIpAndPort(atsAgent);
@@ -93,7 +101,7 @@ public class FileSystemOperations {
      * Creates a binary file. The content of the file is a byte sequence. The bytes
      * themselves are either fixed sequence, or randomly generated, depending on the
      * value of the randomContent parameter.
-     * </br>File's UID and GID will the ones of the system user which started the remote ATS agent.
+     * <br>File's UID and GID will the ones of the system user which started the remote ATS agent.
      *
      * @param filePath the file to work with
      * @param size the size of the generated file
@@ -102,9 +110,9 @@ public class FileSystemOperations {
     @PublicAtsApi
     public void createBinaryFile(
 
-                                  @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                  @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
-                                  boolean randomContent ) {
+            @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
+            boolean randomContent ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, size, randomContent });
@@ -136,11 +144,11 @@ public class FileSystemOperations {
     @PublicAtsApi
     public void createBinaryFile(
 
-                                  @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                  @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
-                                  @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE) int userId,
-                                  @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE) int groupId,
-                                  boolean randomContent ) {
+            @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
+            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE ) int userId,
+            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE ) int groupId,
+            boolean randomContent ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, size, userId, groupId,
@@ -166,12 +174,12 @@ public class FileSystemOperations {
     /**
      * Creates a file. The content is set by the user.
      *
-     * @param filePath the file to work with
-     * @param fileContent the text that will be parsed in the file
+     * @param filePath filesystem location to be used
+     * @param fileContent the text content to be written. Default JVM's charset will be used to convert chars to bytes 
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "fileContent", type = ValidationType.NOT_NULL) String fileContent ) {
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "fileContent", type = ValidationType.NOT_NULL ) String fileContent ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, fileContent });
@@ -181,7 +189,8 @@ public class FileSystemOperations {
         operations.createFile(filePath, fileContent);
 
         // log the result of the operation
-        log.info("Successfully created file by the name of " + filePath + " with content " + fileContent);
+        log.info("Successfully created file by the name of " + filePath + " with size of " + fileContent.length()
+                 + " characters");
     }
 
     /**
@@ -195,8 +204,8 @@ public class FileSystemOperations {
      * @param randomContent if true the method would generate a file with a random content
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
                             boolean randomContent ) {
 
         // validate input parameters
@@ -221,8 +230,8 @@ public class FileSystemOperations {
      * @param randomContent if true the method would generate a file with a random content
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
                             EndOfLineStyle eolStyle, boolean randomContent ) {
 
         // validate input parameters
@@ -245,10 +254,10 @@ public class FileSystemOperations {
      * @param groupId the identification number of the group this file should belong to
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "fileContent", type = ValidationType.NOT_NULL) String fileContent,
-                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE) int userId,
-                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE) int groupId ) {
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "fileContent", type = ValidationType.NOT_NULL ) String fileContent,
+                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE ) int userId,
+                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE ) int groupId ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, fileContent, userId, groupId });
@@ -283,10 +292,10 @@ public class FileSystemOperations {
      * @param randomContent if true, the method would generate a file with a random content
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
-                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE) int userId,
-                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE) int groupId,
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
+                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE ) int userId,
+                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE ) int groupId,
                             EndOfLineStyle eolStyle, boolean randomContent ) {
 
         // validate input parameters
@@ -322,10 +331,10 @@ public class FileSystemOperations {
      * @param randomContent if true, the method would generate a file with a random content
      */
     @PublicAtsApi
-    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE) long size,
-                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE) int userId,
-                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE) int groupId,
+    public void createFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "size", type = ValidationType.NUMBER_POSITIVE ) long size,
+                            @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE ) int userId,
+                            @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE ) int groupId,
                             boolean randomContent ) {
 
         createFile(filePath, size, userId, groupId, null, randomContent);
@@ -336,14 +345,14 @@ public class FileSystemOperations {
      * It simply appends the provided bytes to the file.
      * It does not touch the new line characters in the new content.
      *
-     * <br/><b>Note:</b> It will fail if the file does not exist
+     * <br><b>Note:</b> It will fail if the file does not exist
      *
      * @param filePath the file to work with
      * @param contentToAdd the content to add
      */
     @PublicAtsApi
-    public void appendToFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                              @Validate( name = "contentToAdd", type = ValidationType.STRING_NOT_EMPTY) String contentToAdd ) {
+    public void appendToFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                              @Validate( name = "contentToAdd", type = ValidationType.STRING_NOT_EMPTY ) String contentToAdd ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, contentToAdd });
@@ -365,11 +374,10 @@ public class FileSystemOperations {
      * Get the last modification time for a specified file
      *
      * @param filePath the file to work with
-     * @param modificationTime the modification time to set as a timestamp in milliseconds
      */
     @PublicAtsApi
     public long
-            getFileModificationTime( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    getFileModificationTime( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -395,8 +403,8 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void
-            setFileModificationTime( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                     @Validate( name = "modificationTime", type = ValidationType.NUMBER_POSITIVE) long modificationTime ) {
+    setFileModificationTime( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                             @Validate( name = "modificationTime", type = ValidationType.NUMBER_POSITIVE ) long modificationTime ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, modificationTime });
@@ -416,7 +424,7 @@ public class FileSystemOperations {
      * separated with dots
      */
     public String
-            getFileUniqueId( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    getFileUniqueId( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -427,8 +435,8 @@ public class FileSystemOperations {
     }
 
     /**
-     * Make a file hidden or not hidden. <br/>
-     * On Unix systems a file is made hidden by inserting '.' in front of its name. <br/>
+     * Make a file hidden or not hidden. <br>
+     * On Unix systems a file is made hidden by inserting '.' in front of its name. <br>
      * On Windows a file is made hidden by setting the appropriate file attribute.
      *
      * @param filePath the file to work with
@@ -436,8 +444,8 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void
-            setFileHiddenAttribute( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                    boolean hidden ) {
+    setFileHiddenAttribute( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            boolean hidden ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, hidden });
@@ -448,8 +456,8 @@ public class FileSystemOperations {
 
         // log the result of the operation
         log.info("Successfully made the " + filePath + " to be " + (hidden
-                                                                           ? ""
-                                                                           : "not ")
+                                                                    ? ""
+                                                                    : "not ")
                  + "hidden" + getHostDescriptionSuffix());
     }
 
@@ -468,15 +476,17 @@ public class FileSystemOperations {
     }
 
     /**
-     * Copies the contents of a file from atsAgent host to a new file on the local host. <br/>
-     * <b>Note:</b> If no atsAgent is used or it is local, then the source files is searched on the local host
+     * Copies the contents of a file <strong>from</strong> atsAgent host to a new file on the local host (Test Executor).
+     * <br>
+     * <b>Note:</b> If no atsAgent is specified in constructor or it is local, then the source files is searched on the
+     * local host.
      *
-     * @param fromFile the source file
+     * @param fromFile the source file located on the ATS Agent
      * @param toFile the local destination file
      */
     @PublicAtsApi
-    public void copyFileFrom( @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY) String fromFile,
-                              @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY) String toFile ) {
+    public void copyFileFrom( @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY ) String fromFile,
+                              @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY ) String toFile ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fromFile, toFile });
@@ -496,14 +506,14 @@ public class FileSystemOperations {
     }
 
     /**
-     * Copies the contents of a file from the local host to a new file on the atsAgent host
+     * Copies the contents of a file from the local host (Test Executor) to a new file on the atsAgent host
      *
      * @param fromFile the source file to copy
-     * @param toFile the destination file to copy to
+     * @param toFile the destination file name path (not just the directory) to copy to. Absolute path is expected
      */
     @PublicAtsApi
-    public void copyFileTo( @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY) String fromFile,
-                            @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY) String toFile ) {
+    public void copyFileTo( @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY ) String fromFile,
+                            @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY ) String toFile ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fromFile, toFile });
@@ -521,7 +531,9 @@ public class FileSystemOperations {
 
             log.info("Successfully copied " + fromFile + " to " + toFile);
         } else {
-            ((RemoteFileSystemOperations) operations).copyFile(fromFile, toFile, this.failOnError);
+            RemoteFileSystemOperations rfso = (RemoteFileSystemOperations) operations;
+            rfso.setCopyInPassiveMode(copyInPassiveMode);
+            rfso.copyFile(fromFile, toFile, this.failOnError);
 
             log.info("Successfully copied " + fromFile + " from local host to file " + toFile + " on "
                      + atsAgent);
@@ -533,19 +545,19 @@ public class FileSystemOperations {
      *
      * @param fromHost the address of the ATS agent on the source host.<br />
      * If you provide null then local host will be used. In such case it is recommended to use
-     * {@link #copyFileTo(String, String)} method after FileSytemOperations is constructed with target agent (toHost)
+     * {@link #copyFileTo(String, String)} method after FileSystemOperations is constructed with target agent (toHost)
      * @param fromFile the source file to copy
      * @param toHost the address of the ATS agent on the destination host.<br />
      * If you provide null then local host will be used. In such case it is recommended to use
-     * {@link #copyFileFrom(String, String)} method after FileSytemOperations is constructed with target agent (fromHost)
+     * {@link #copyFileFrom(String, String)} method after FileSystemOperations is constructed with target agent (fromHost)
      * @param toFile the destination file to copy to
      */
     @PublicAtsApi
     public void
-            copyRemoteFile( @Validate( name = "fromHost", type = ValidationType.STRING_SERVER_WITH_PORT) String fromHost,
-                            @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY) String fromFile,
-                            @Validate( name = "toHost", type = ValidationType.STRING_SERVER_WITH_PORT) String toHost,
-                            @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY) String toFile ) {
+    copyRemoteFile( @Validate( name = "fromHost", type = ValidationType.STRING_SERVER_WITH_PORT ) String fromHost,
+                    @Validate( name = "fromFile", type = ValidationType.STRING_NOT_EMPTY ) String fromFile,
+                    @Validate( name = "toHost", type = ValidationType.STRING_SERVER_WITH_PORT ) String toHost,
+                    @Validate( name = "toFile", type = ValidationType.STRING_NOT_EMPTY ) String toFile ) {
 
         // replace to pass validation
         if (fromHost == null) {
@@ -604,23 +616,48 @@ public class FileSystemOperations {
     }
 
     /**
-     * Deletes a file <br/>
+     * Sets mode for copy operations for the ATS Agent represented by current instance. <br>
+     *     Such methods are ({@link #copyFileFrom(String, String)} and {@link #copyFileTo(String, String)}).
+     * @param copyPassiveMode <code>true</code> is used when the agent container is not able to open local ports for copy file
+     *                        operations. Such case could be when agent is behind firewall or is in a container which
+     *                        does not have exposed port range for file copy operations.
+     *
+     * @see com.axway.ats.action.ActionLibraryConfigurator#setCopyFileStartPort(int)
+     * @see com.axway.ats.action.ActionLibraryConfigurator#setCopyFileEndPort(int)
+     * @since 4.0.7
+     */
+    @PublicAtsApi
+    public void setCopyInPassiveMode( boolean copyPassiveMode ) {
+
+        this.copyInPassiveMode = copyPassiveMode;
+    }
+
+    /**
+     * Deletes a file <br>
      * <b>Note: </b>It does nothing if the file does not exist
      *
      * @param filePath the file to work with
      */
     @PublicAtsApi
-    public void deleteFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    public void deleteFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
-
-        // execute action
         IFileSystemOperations operations = getOperationsImplementationFor(atsAgent);
-        operations.deleteFile(filePath);
 
-        // log the result of the operation
-        log.info("Successfully deleted " + filePath + getHostDescriptionSuffix());
+        if (doesFileExist(filePath)) {
+
+            operations.deleteFile(filePath);
+
+            // log the result of the operation
+            log.info("Successfully deleted " + filePath + getHostDescriptionSuffix());
+
+        } else {
+            String message =
+                    "Nothing to delete since file '" + filePath + "' does not exist " + getHostDescriptionSuffix();
+            log.info(message);
+        }
+
     }
 
     /**
@@ -631,9 +668,9 @@ public class FileSystemOperations {
      * @param overwrite whether to override the destination file if already exists
      */
     @PublicAtsApi
-    public void renameFile( @Validate( name = "sourceFile", type = ValidationType.STRING_NOT_EMPTY) String sourceFile,
-                            @Validate( name = "destinationFile", type = ValidationType.STRING_NOT_EMPTY) String destinationFile,
-                            @Validate( name = "overwrite", type = ValidationType.NONE) boolean overwrite ) {
+    public void renameFile( @Validate( name = "sourceFile", type = ValidationType.STRING_NOT_EMPTY ) String sourceFile,
+                            @Validate( name = "destinationFile", type = ValidationType.STRING_NOT_EMPTY ) String destinationFile,
+                            @Validate( name = "overwrite", type = ValidationType.NONE ) boolean overwrite ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ sourceFile, destinationFile, overwrite });
@@ -650,11 +687,12 @@ public class FileSystemOperations {
     /**
      * Creates a directory
      *
-     * @param directoryName the name of the new directory
+     * @param directoryName the name of the new directory.<br>If the name consist of multiple levels (/dir1/dir2/dir3/dir_final), all of the missing directories will be created
      */
     @PublicAtsApi
     public void
-            createDirectory( @Validate( name = "directoryName", type = ValidationType.STRING_NOT_EMPTY) String directoryName ) {
+    createDirectory(
+            @Validate( name = "directoryName", type = ValidationType.STRING_NOT_EMPTY ) String directoryName ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ directoryName });
@@ -671,15 +709,16 @@ public class FileSystemOperations {
     /**
      * Creates a directory on with a specific user and group id
      *
-     * @param directoryName the name of the new directory
+     * @param directoryName the name of the new directory<br>If the name consist of multiple levels (/dir1/dir2/dir3/dir_final), all of the missing directories will be created
      * @param userId the identification number of the user this file should belong to
      * @param groupId the identification number of the group this file should belong to
+     * Note group and user ID are applied only to the last directory
      */
     @PublicAtsApi
     public void
-            createDirectory( @Validate( name = "directoryName", type = ValidationType.STRING_NOT_EMPTY) String directoryName,
-                             @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE) int userId,
-                             @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE) int groupId ) {
+    createDirectory( @Validate( name = "directoryName", type = ValidationType.STRING_NOT_EMPTY ) String directoryName,
+                     @Validate( name = "userId", type = ValidationType.NUMBER_POSITIVE ) int userId,
+                     @Validate( name = "groupId", type = ValidationType.NUMBER_POSITIVE ) int groupId ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ directoryName, userId, groupId });
@@ -702,9 +741,9 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void
-            copyDirectoryTo( @Validate( name = "fromDirName", type = ValidationType.STRING_NOT_EMPTY) String fromDirName,
-                             @Validate( name = "toDirName", type = ValidationType.STRING_NOT_EMPTY) String toDirName,
-                             @Validate( name = "isRecursive", type = ValidationType.NONE) boolean isRecursive ) {
+    copyDirectoryTo( @Validate( name = "fromDirName", type = ValidationType.STRING_NOT_EMPTY ) String fromDirName,
+                     @Validate( name = "toDirName", type = ValidationType.STRING_NOT_EMPTY ) String toDirName,
+                     @Validate( name = "isRecursive", type = ValidationType.NONE ) boolean isRecursive ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fromDirName, toDirName, isRecursive });
@@ -718,9 +757,9 @@ public class FileSystemOperations {
 
             log.info("Successfully copied directory " + fromDirName + " to " + toDirName);
         } else {
-
-            ((RemoteFileSystemOperations) operations).copyDirectory(fromDirName, toDirName, isRecursive,
-                                                                    this.failOnError);
+            RemoteFileSystemOperations rfso = (RemoteFileSystemOperations) operations;
+            rfso.setCopyInPassiveMode(copyInPassiveMode);
+            rfso.copyDirectory(fromDirName, toDirName, isRecursive, this.failOnError);
 
             log.info("Successfully copied directory " + fromDirName + " from local host to " + toDirName
                      + " on " + this.atsAgent);
@@ -728,17 +767,18 @@ public class FileSystemOperations {
     }
 
     /**
-     * Copies the contents of a directory to a new one
+     * Copies the contents of a directory <code>fromDirName</code> in atsAgent host to a new one on the local host. <br>
+     * <b>Note:</b> If no atsAgent is used or it is local, then the source directory is searched on the local host.
      *
-     * @param fromDirName the source file to copy
-     * @param toDirName the destination file to copy to
+     * @param fromDirName the source directory to be copied
+     * @param toDirName the destination directory
      * @param isRecursive whether to copy recursively or not
      */
     @PublicAtsApi
     public void
-            copyDirectoryFrom( @Validate( name = "fromDirName", type = ValidationType.STRING_NOT_EMPTY) String fromDirName,
-                               @Validate( name = "toDirName", type = ValidationType.STRING_NOT_EMPTY) String toDirName,
-                               @Validate( name = "isRecursive", type = ValidationType.NONE) boolean isRecursive ) {
+    copyDirectoryFrom( @Validate( name = "fromDirName", type = ValidationType.STRING_NOT_EMPTY ) String fromDirName,
+                       @Validate( name = "toDirName", type = ValidationType.STRING_NOT_EMPTY ) String toDirName,
+                       @Validate( name = "isRecursive", type = ValidationType.NONE ) boolean isRecursive ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fromDirName, toDirName, isRecursive });
@@ -772,11 +812,11 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void
-            copyRemoteDirectory( @Validate( name = "fromHost", type = ValidationType.STRING_SERVER_WITH_PORT) String fromHost,
-                                 @Validate( name = "fromDirectory", type = ValidationType.STRING_NOT_EMPTY) String fromDirectory,
-                                 @Validate( name = "toHost", type = ValidationType.STRING_SERVER_WITH_PORT) String toHost,
-                                 @Validate( name = "toDirectory", type = ValidationType.STRING_NOT_EMPTY) String toDirectory,
-                                 @Validate( name = "isRecursive", type = ValidationType.NONE) boolean isRecursive ) {
+    copyRemoteDirectory( @Validate( name = "fromHost", type = ValidationType.STRING_SERVER_WITH_PORT ) String fromHost,
+                         @Validate( name = "fromDirectory", type = ValidationType.STRING_NOT_EMPTY ) String fromDirectory,
+                         @Validate( name = "toHost", type = ValidationType.STRING_SERVER_WITH_PORT ) String toHost,
+                         @Validate( name = "toDirectory", type = ValidationType.STRING_NOT_EMPTY ) String toDirectory,
+                         @Validate( name = "isRecursive", type = ValidationType.NONE ) boolean isRecursive ) {
 
         // replace to pass validation
         if (fromHost == null) {
@@ -844,14 +884,15 @@ public class FileSystemOperations {
     }
 
     /**
-     * Deletes a directory and all its content. <br/>
+     * Deletes a directory and all its content. <br>
      * <b>Note: </b>It does nothing if the directory does not exist
      *
      * @param directoryPath the directory to work with
      */
     @PublicAtsApi
     public void
-            deleteDirectory( @Validate( name = "directoryPath", type = ValidationType.STRING_NOT_EMPTY) String directoryPath ) {
+    deleteDirectory(
+            @Validate( name = "directoryPath", type = ValidationType.STRING_NOT_EMPTY ) String directoryPath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ directoryPath });
@@ -866,14 +907,15 @@ public class FileSystemOperations {
     }
 
     /**
-     * Deletes all directory's content, but does not touch the directory itself<br/>
+     * Deletes all directory's content, but does not touch the directory itself<br>
      * <b>Note: </b>It does nothing if the directory does not exist
      *
      * @param directoryPath the directory to work with
      */
     @PublicAtsApi
     public void
-            deleteDirectoryContent( @Validate( name = "directoryPath", type = ValidationType.STRING_NOT_EMPTY) String directoryPath ) {
+    deleteDirectoryContent(
+            @Validate( name = "directoryPath", type = ValidationType.STRING_NOT_EMPTY ) String directoryPath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ directoryPath });
@@ -888,7 +930,9 @@ public class FileSystemOperations {
     }
 
     /**
-     * Replaces specific text in file. Supports regular expressions
+     * Replaces specific text in file. Supports regular expressions.<br />
+     * Note that replacement is performed line by line. If you want to replace multiple lines at once you should use the 
+     * method accepting map - {@link #replaceTextInFile(String, Map, boolean)} 
      *
      * @param filePath the file to work with
      * @param searchText the text to replace
@@ -897,25 +941,26 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void replaceTextInFile(
-                                   @Validate(name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                   @Validate(name = "searchText", type = ValidationType.STRING_NOT_EMPTY) String searchText,
-                                   @Validate(name = "newText", type = ValidationType.NONE) String newText,
-                                   @Validate(name = "isRegex", type = ValidationType.NONE) boolean isRegex ) {
+            @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+            @Validate( name = "searchText", type = ValidationType.STRING_NOT_EMPTY ) String searchText,
+            @Validate( name = "newText", type = ValidationType.NONE ) String newText,
+            @Validate( name = "isRegex", type = ValidationType.NONE ) boolean isRegex ) {
 
         // validate input parameters
-        new Validator().validateMethodParameters( new Object[]{ filePath, searchText, newText, isRegex } );
+        new Validator().validateMethodParameters(new Object[]{ filePath, searchText, newText, isRegex });
 
         // execute action
-        IFileSystemOperations operations = getOperationsImplementationFor( atsAgent );
-        operations.replaceTextInFile( filePath, searchText, newText, isRegex );
+        IFileSystemOperations operations = getOperationsImplementationFor(atsAgent);
+        operations.replaceTextInFile(filePath, searchText, newText, isRegex);
 
         // log the result of the operation
-        log.info( "Successfully replaced text '" + searchText + "' with '" + newText + "' in file '"
-                  + filePath + "'" + getHostDescriptionSuffix() );
+        log.info("Successfully replaced text '" + searchText + "' with '" + newText + "' in file '"
+                 + filePath + "'" + getHostDescriptionSuffix());
     }
 
     /**
-     * Replaces specific texts in file. Supports regular expressions
+     * Replaces specific texts in file. Supports regular expressions.<br />
+     * Replacement is done line by line, so each regular expression should match text on single line.
      *
      * @param filePath the file to work with
      * @param searchTokens a map in the form <text to replace, replacement text>
@@ -923,20 +968,20 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void replaceTextInFile(
-                                   @Validate(name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                   @Validate(name = "searchTokens", type = ValidationType.NOT_NULL) Map<String, String> searchTokens,
-                                   @Validate(name = "isRegex", type = ValidationType.NONE) boolean isRegex ) {
+            @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+            @Validate( name = "searchTokens", type = ValidationType.NOT_NULL ) Map<String, String> searchTokens,
+            @Validate( name = "isRegex", type = ValidationType.NONE ) boolean isRegex ) {
 
         // validate input parameters
-        new Validator().validateMethodParameters( new Object[]{ filePath, searchTokens, isRegex } );
+        new Validator().validateMethodParameters(new Object[]{ filePath, searchTokens, isRegex });
 
         // execute action
-        IFileSystemOperations operations = getOperationsImplementationFor( atsAgent );
-        operations.replaceTextInFile( filePath, searchTokens, isRegex );
+        IFileSystemOperations operations = getOperationsImplementationFor(atsAgent);
+        operations.replaceTextInFile(filePath, searchTokens, isRegex);
 
         // log the result of the operation
-        log.info( "Successfully replaced all tokens in file '" + filePath + "'"
-                  + getHostDescriptionSuffix() );
+        log.info("Successfully replaced all tokens in file '" + filePath + "'"
+                 + getHostDescriptionSuffix());
     }
 
     /**
@@ -946,13 +991,13 @@ public class FileSystemOperations {
      * @param mode mode for computing the MD5 sum
      * <blockquote>
      * ASCII mode - the line endings will be ignored when computing the sum.
-     * E.g. same file with Windows and Linux style line endings will give same MD5 sum <br/>
+     * E.g. same file with Windows and Linux style line endings will give same MD5 sum <br>
      * BINARY mode - each byte is affecting the returned result
      * </blockquote>
      * @return the MD5 sum in hex format
      */
     @PublicAtsApi
-    public String computeMd5Sum( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
+    public String computeMd5Sum( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
                                  Md5SumMode mode ) {
 
         String md5 = null;
@@ -980,8 +1025,8 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public String[]
-            getLastLinesFromFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                  @Validate( name = "numLinesToRead", type = ValidationType.NUMBER_GREATER_THAN_ZERO) int numberOfLinesToRead ) {
+    getLastLinesFromFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                          @Validate( name = "numLinesToRead", type = ValidationType.NUMBER_GREATER_THAN_ZERO ) int numberOfLinesToRead ) {
 
         String[] lastLines = null;
 
@@ -1010,7 +1055,7 @@ public class FileSystemOperations {
      * <blockquote>
      * true - expects match using only these (DOS/Win-style) special characters:
      *      <blockquote>
-     *      '*' character - matches a sequence of any characters<br/>
+     *      '*' character - matches a sequence of any characters<br>
      *      '?' character - matches one single character
      *      </blockquote>
      * false - supports any Java regular expression
@@ -1024,9 +1069,9 @@ public class FileSystemOperations {
      *
      */
     @PublicAtsApi
-    public String[] fileGrep( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                              @Validate( name = "searchPattern", type = ValidationType.STRING_NOT_EMPTY) String searchPattern,
-                              @Validate( name = "isSimpleMode", type = ValidationType.NONE) boolean isSimpleMode ) {
+    public String[] fileGrep( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                              @Validate( name = "searchPattern", type = ValidationType.STRING_NOT_EMPTY ) String searchPattern,
+                              @Validate( name = "isSimpleMode", type = ValidationType.NONE ) boolean isSimpleMode ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, searchPattern, isSimpleMode });
@@ -1044,7 +1089,7 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public String
-            getFileGroup( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    getFileGroup( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1068,7 +1113,7 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public String
-            getFileOwner( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    getFileOwner( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1091,7 +1136,7 @@ public class FileSystemOperations {
      * @return the GID number
      */
     @PublicAtsApi
-    public long getFileGID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    public long getFileGID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1114,8 +1159,8 @@ public class FileSystemOperations {
      * @param gid the GID number
      */
     @PublicAtsApi
-    public void setFileGID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "gid", type = ValidationType.NUMBER_POSITIVE) long gid ) {
+    public void setFileGID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "gid", type = ValidationType.NUMBER_POSITIVE ) long gid ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, gid });
@@ -1135,7 +1180,7 @@ public class FileSystemOperations {
      * @return the UID number
      */
     @PublicAtsApi
-    public long getFileUID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    public long getFileUID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1158,8 +1203,8 @@ public class FileSystemOperations {
      * @param uid the UID number
      */
     @PublicAtsApi
-    public void setFileUID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                            @Validate( name = "uid", type = ValidationType.NUMBER_POSITIVE) long uid ) {
+    public void setFileUID( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                            @Validate( name = "uid", type = ValidationType.NUMBER_POSITIVE ) long uid ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, uid });
@@ -1180,7 +1225,7 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public String
-            getFilePermissions( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    getFilePermissions( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1204,8 +1249,8 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public void
-            setFilePermissions( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                                @Validate( name = "permissions", type = ValidationType.STRING_NOT_EMPTY) String permissions ) {
+    setFilePermissions( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                        @Validate( name = "permissions", type = ValidationType.STRING_NOT_EMPTY ) String permissions ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, permissions });
@@ -1226,7 +1271,7 @@ public class FileSystemOperations {
      * @return the size in bytes
      */
     @PublicAtsApi
-    public long getFileSize( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    public long getFileSize( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1243,15 +1288,15 @@ public class FileSystemOperations {
     }
 
     /**
-     * Reads the file content<br/>
+     * Reads the file content<br>
      * <b>NOTE:</b> This method should be used for relatively small files as it loads the whole file in the memory
      *
-     * @param filePathh the file to work with
+     * @param filePath the file to work with
      * @param fileEncoding the file encoding. If null the default encoding will be used
      * @return the file content
      */
     @PublicAtsApi
-    public String readFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
+    public String readFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
                             String fileEncoding ) {
 
         // validate input parameters
@@ -1264,7 +1309,7 @@ public class FileSystemOperations {
 
     /**
      * Searches some text in file and it remembers where the search stopped.
-     * The following search starts from the point where the last search stopped<br/>
+     * The following search starts from the point where the last search stopped<br>
      *
      * This method is appropriate for growing text files(for example some kind of a log file)
      *
@@ -1276,9 +1321,9 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public FileMatchInfo
-            findNewTextInFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                               @Validate( name = "searchText", type = ValidationType.STRING_NOT_EMPTY) String searchText,
-                               boolean isRegex ) {
+    findNewTextInFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                       @Validate( name = "searchText", type = ValidationType.STRING_NOT_EMPTY ) String searchText,
+                       boolean isRegex ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, searchText, isRegex });
@@ -1288,7 +1333,7 @@ public class FileSystemOperations {
 
     /**
      * Searches some texts in file and it remembers where the search stopped.
-     * The following search starts from the point where the last search stopped<br/>
+     * The following search starts from the point where the last search stopped<br>
      *
      * This method is appropriate for growing text files(for example some kind of a log file)
      *
@@ -1300,9 +1345,9 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public FileMatchInfo
-            findNewTextInFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath,
-                               @Validate( name = "searchTexts", type = ValidationType.NOT_NULL) String[] searchTexts,
-                               boolean isRegex ) {
+    findNewTextInFile( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath,
+                       @Validate( name = "searchTexts", type = ValidationType.NOT_NULL ) String[] searchTexts,
+                       boolean isRegex ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath, searchTexts, isRegex });
@@ -1327,7 +1372,7 @@ public class FileSystemOperations {
 
     /**
      * Searches for files and/or directories on the file system and returns the
-     * path of the matched ones. </br>
+     * path of the matched ones. <br>
      * <b>Note: </b>When path points to a directory, it ends with host's file path separator "/" or "\"
      *
      * @param startLocation the folder where search starts
@@ -1339,11 +1384,11 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public String[]
-            findFiles( @Validate( name = "startLocation", type = ValidationType.STRING_NOT_EMPTY) String startLocation,
-                       @Validate( name = "searchName", type = ValidationType.STRING_NOT_EMPTY) String searchName,
-                       @Validate( name = "isRegex", type = ValidationType.NONE) boolean isRegex,
-                       @Validate( name = "acceptDirectories", type = ValidationType.NONE) boolean acceptDirectories,
-                       @Validate( name = "recursiveSearch", type = ValidationType.NONE) boolean recursiveSearch ) {
+    findFiles( @Validate( name = "startLocation", type = ValidationType.STRING_NOT_EMPTY ) String startLocation,
+               @Validate( name = "searchName", type = ValidationType.STRING_NOT_EMPTY ) String searchName,
+               @Validate( name = "isRegex", type = ValidationType.NONE ) boolean isRegex,
+               @Validate( name = "acceptDirectories", type = ValidationType.NONE ) boolean acceptDirectories,
+               @Validate( name = "recursiveSearch", type = ValidationType.NONE ) boolean recursiveSearch ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ startLocation, searchName, isRegex,
@@ -1362,7 +1407,7 @@ public class FileSystemOperations {
      */
     @PublicAtsApi
     public boolean
-            doesFileExist( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY) String filePath ) {
+    doesFileExist( @Validate( name = "filePath", type = ValidationType.STRING_NOT_EMPTY ) String filePath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ filePath });
@@ -1377,11 +1422,11 @@ public class FileSystemOperations {
      *
      * @param dirPath the target directory path
      * @return <code>true</code> if the directory exists and <code>false</code> if it doesn't
-     * @throws IllegalArgumentExeption if the file exists, but it is not a directory
+     * @throws IllegalArgumentException if the file exists, but it is not a directory
      */
     @PublicAtsApi
     public boolean doesDirectoryExist(
-                                       @Validate( name = "dirPath", type = ValidationType.STRING_NOT_EMPTY) String dirPath ) {
+            @Validate( name = "dirPath", type = ValidationType.STRING_NOT_EMPTY ) String dirPath ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ dirPath });
@@ -1422,7 +1467,7 @@ public class FileSystemOperations {
      * @param fileName file name
      */
     @PublicAtsApi
-    public void lockFile( @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY) String fileName ) {
+    public void lockFile( @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY ) String fileName ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fileName });
@@ -1441,7 +1486,7 @@ public class FileSystemOperations {
      * @param fileName file name
      */
     @PublicAtsApi
-    public void unlockFile( @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY) String fileName ) {
+    public void unlockFile( @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY ) String fileName ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fileName });
@@ -1455,7 +1500,7 @@ public class FileSystemOperations {
     }
 
     /**
-     * Read file from specific byte position. Used for file tail.<br/>
+     * Read file from specific byte position. Used for file tail.<br>
      * <b>NOTE:</b> If the file is replaced with the same byte content, then no change is assumed and 'null' is returned
      *
      * @param fileName file name
@@ -1463,8 +1508,9 @@ public class FileSystemOperations {
      * @return {@link FileTailInfo} object
      */
     @PublicAtsApi
-    public FileTailInfo readFile( @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY) String fileName,
-                                  @Validate( name = "fromBytePosition", type = ValidationType.NONE) long fromBytePosition ) {
+    public FileTailInfo readFile(
+            @Validate( name = "fileName", type = ValidationType.STRING_NOT_EMPTY ) String fileName,
+            @Validate( name = "fromBytePosition", type = ValidationType.NONE ) long fromBytePosition ) {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ fileName, fromBytePosition });
@@ -1485,8 +1531,9 @@ public class FileSystemOperations {
      */
     @Deprecated
     @PublicAtsApi
-    public void unzip( @Validate( name = "zipFilePath", type = ValidationType.STRING_NOT_EMPTY) String zipFilePath,
-                       @Validate( name = "outputDirPath", type = ValidationType.STRING_NOT_EMPTY) String outputDirPath ) throws FileSystemOperationException {
+    public void unzip( @Validate( name = "zipFilePath", type = ValidationType.STRING_NOT_EMPTY ) String zipFilePath,
+                       @Validate( name = "outputDirPath", type = ValidationType.STRING_NOT_EMPTY ) String outputDirPath )
+            throws FileSystemOperationException {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ zipFilePath, outputDirPath });
@@ -1498,15 +1545,18 @@ public class FileSystemOperations {
 
     /**
      * Extract archive to local or remote machine.
-     * If the machine is UNIX-like it will preserve the permissions
+     * If the machine is UNIX-like it will preserve the permissions.
+     * Note that only specific file extensions (formats) are supported. Currently extensions ZIP, GZ, TAR, TAR.GZ and
+     * Java archives (JAR, WAR, EAR, SAR) are supported.
      *
      * @param archiveFilePath the archive file path
      * @param outputDirPath output directory which is used as base directory for extracted files
      */
     @PublicAtsApi
     public void
-            extract( @Validate( name = "archiveFilePath", type = ValidationType.STRING_NOT_EMPTY) String archiveFilePath,
-                     @Validate( name = "outputDirPath", type = ValidationType.STRING_NOT_EMPTY) String outputDirPath ) throws FileSystemOperationException {
+    extract( @Validate( name = "archiveFilePath", type = ValidationType.STRING_NOT_EMPTY ) String archiveFilePath,
+             @Validate( name = "outputDirPath", type = ValidationType.STRING_NOT_EMPTY ) String outputDirPath )
+            throws FileSystemOperationException {
 
         // validate input parameters
         new Validator().validateMethodParameters(new Object[]{ archiveFilePath, outputDirPath });
@@ -1520,7 +1570,14 @@ public class FileSystemOperations {
 
     private void checkIfArchiveFormatIsSupported( String archiveFilePath ) {
 
-        if (archiveFilePath.endsWith(".zip")) {
+        if (StringUtils.isNullOrEmpty(archiveFilePath)) {
+            throw new FileSystemOperationException("Extract operation error. Empty filename provided.");
+        }
+        archiveFilePath = archiveFilePath.toLowerCase();
+        if (archiveFilePath.endsWith(".zip") || archiveFilePath.endsWith(".jar")
+            || archiveFilePath.endsWith(".war") || archiveFilePath.endsWith(".ear")
+            || archiveFilePath.endsWith(".sar") || archiveFilePath.endsWith(".apk")) {
+            // https://en.wikipedia.org/wiki/JAR_(file_format)
             return;
         } else if (archiveFilePath.endsWith(".gz") && !archiveFilePath.endsWith(".tar.gz")) {
             return;
@@ -1531,11 +1588,11 @@ public class FileSystemOperations {
         } else {
             String[] filenameTokens = IoUtils.getFileName(archiveFilePath).split("\\.");
             if (filenameTokens.length <= 1) {
-                throw new FileSystemOperationException("Archive format was not provided.");
+                throw new FileSystemOperationException("Archive format was not provided as file extension.");
             } else {
                 throw new FileSystemOperationException("Archive with format '"
                                                        + filenameTokens[filenameTokens.length - 1]
-                                                       + "' is not supported. Available once are 'zip', 'gz', 'tar' and 'tar.gz' .");
+                                                       + "' is not supported. Available once are 'zip', 'jar', 'gz', 'tar' and 'tar.gz' .");
             }
         }
 
@@ -1543,7 +1600,7 @@ public class FileSystemOperations {
 
     // checks if file exists and is a file
     private void checkIfFileExistsAndIsFile(
-                                             String filePath ) throws FileNotFoundException {
+            String filePath ) throws FileNotFoundException {
 
         File file = new File(filePath);
 
@@ -1562,8 +1619,8 @@ public class FileSystemOperations {
     private String getHostDescriptionSuffix() {
 
         return atsAgent != null
-                                ? " on " + atsAgent
-                                : "";
+               ? " on " + atsAgent
+               : "";
     }
 
     /**
@@ -1580,7 +1637,9 @@ public class FileSystemOperations {
         if (HostUtils.isLocalAtsAgent(atsAgent)) {
             return new LocalFileSystemOperations();
         } else {
-            return new RemoteFileSystemOperations(atsAgent);
+            RemoteFileSystemOperations rfso = new RemoteFileSystemOperations(atsAgent);
+            // move to the place when directly will be needed: rfso.setCopyInPassiveMode(copyInPassiveMode);
+            return rfso;
         }
     }
 }

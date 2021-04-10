@@ -22,14 +22,9 @@ import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Date;
 
-import org.apache.log4j.Logger;
-import org.apache.poi.openxml4j.exceptions.InvalidFormatException;
-import org.apache.poi.ss.usermodel.Cell;
-import org.apache.poi.ss.usermodel.DateUtil;
-import org.apache.poi.ss.usermodel.Row;
-import org.apache.poi.ss.usermodel.Sheet;
-import org.apache.poi.ss.usermodel.Workbook;
-import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
+import org.apache.poi.ss.usermodel.*;
 
 import com.axway.ats.harness.testng.exceptions.DataProviderException;
 
@@ -52,7 +47,7 @@ public class ExcelParser {
     /** The {@link String} used to indicate that the table rows are to be returned in Cartesian product */
     public static final String  MULTIPLY                     = "MULTIPLY";
 
-    Logger                      log                          = Logger.getLogger(ExcelParser.class);
+    Logger                      log                          = LogManager.getLogger(ExcelParser.class);
 
     private static final String ERROR_LOCATING_STARTING_CELL = "Unable to find test data starting cell. Such should have a comment containing "
                                                                + TEST_CASE_START;
@@ -113,8 +108,6 @@ public class ExcelParser {
             this.excelFileWorkbook = WorkbookFactory.create(excelFileInputStream);
             this.sheetName = sheetName;
         } catch (IOException e) {
-            throw new DataProviderException(UNABLE_TO_LOAD_DATA, e);
-        } catch (InvalidFormatException e) {
             throw new DataProviderException(UNABLE_TO_LOAD_DATA, e);
         }
     }
@@ -203,7 +196,7 @@ public class ExcelParser {
                 for (int row = startRow; row <= endRow; row++) {
                     Row rowValue = sheet.getRow(row);
                     if (rowValue != null) {
-                        Cell currentCell = rowValue.getCell(col, Row.CREATE_NULL_AS_BLANK);
+                        Cell currentCell = rowValue.getCell(col, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                         this.workingObjectArray[row - startRow][parameterIndex] = parseCellContents(currentCell,
                                                                                                     parameterType);
                     }
@@ -232,7 +225,7 @@ public class ExcelParser {
             for (int row = startRow; row <= endRow; ++row) {
                 Row rowValue = sheet.getRow(row);
                 if (rowValue != null) {
-                    Cell currentCell = rowValue.getCell(col, Row.CREATE_NULL_AS_BLANK);
+                    Cell currentCell = rowValue.getCell(col, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
 
                     Object currentObject = parseCellContents(currentCell, parameterType);
 
@@ -296,7 +289,7 @@ public class ExcelParser {
 
         String cellValue = "";
         if (!methodParameterType.equals(Date.class)) {
-            cell.setCellType(Cell.CELL_TYPE_STRING);
+            cell.setCellType(CellType.STRING);
             cellValue = cell.getStringCellValue();
         }
 
@@ -461,7 +454,7 @@ public class ExcelParser {
                         columns = rowValue.getLastCellNum();
                     }
 
-                    Cell current = rowValue.getCell(x, Row.CREATE_NULL_AS_BLANK);
+                    Cell current = rowValue.getCell(x, Row.MissingCellPolicy.CREATE_NULL_AS_BLANK);
                     if (hasComments(current)) {
                         if (isStartingCell(current)) {
                             this.startingCell = current;

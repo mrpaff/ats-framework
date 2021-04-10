@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -34,7 +34,8 @@ import javax.net.ssl.SSLContext;
 import org.apache.commons.net.ProtocolCommandListener;
 import org.apache.http.ssl.SSLContextBuilder;
 import org.apache.http.ssl.TrustStrategy;
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 
 import com.axway.ats.common.filetransfer.FileTransferException;
 import com.axway.ats.common.filetransfer.TransferMode;
@@ -49,8 +50,8 @@ import com.axway.ats.core.utils.StringUtils;
 /**
  * The {@link FtpsClient} uses the Apache Commons Net component suite for Java
  * ( https://commons.apache.org/proper/commons-net/ ) to initiate and execute FTPS 
- * connections to a remote server. <br/>
- * <br/>
+ * connections to a remote server. <br>
+ * <br>
  * The current implementation does *not* verify the server certificate against a
  * local trusted CA store!
  */
@@ -58,7 +59,7 @@ public class FtpsClient extends AbstractFileTransferClient {
 
     private org.apache.commons.net.ftp.FTPSClient ftpsConnection                 = null;
 
-    private static final Logger                   log                            = Logger.getLogger(FtpsClient.class);
+    private static final Logger                   log                            = LogManager.getLogger(FtpsClient.class);
 
     private static final String                   USE_ONE_OF_THE_FTPS_CONSTANTS  = "Use one of the FTPS_* constants for key and values in GenericFileTransferClient class";
 
@@ -202,7 +203,7 @@ public class FtpsClient extends AbstractFileTransferClient {
             this.ftpsConnection.connect(hostname, this.port);
             // login to the host
             if (!this.ftpsConnection.login(userName, password)) {
-                throw new Exception("Invallid username and/or password. ");
+                throw new Exception("Invalid username and/or password. ");
             }
             // set transfer mode
             if (this.transferMode == TransferMode.ASCII) {
@@ -214,7 +215,9 @@ public class FtpsClient extends AbstractFileTransferClient {
                     throw new Exception("Unable to set transfer mode to BINARY");
                 }
             }
-
+            // initial fix - always use passive mode
+            // Currently not working: int replyCode = this.ftpsConnection.pasv();
+            this.ftpsConnection.enterLocalPassiveMode();
         } catch (Exception e) {
             String errMessage = "Unable to connect to  " + hostname + " on port " + this.port
                                 + " using username " + userName + " and password " + password;
@@ -374,6 +377,12 @@ public class FtpsClient extends AbstractFileTransferClient {
                  + ftpsConnection.getPassiveHost());
     }
 
+    /**
+     * Currently not supporting commands requiring opening of data connection
+     * @param command the command to run
+     * @return String representing the return code
+     * @throws FileTransferException
+     */
     @Override
     public String executeCommand(
                                   String command ) throws FileTransferException {
@@ -382,7 +391,6 @@ public class FtpsClient extends AbstractFileTransferClient {
         String returnCode = "";
 
         try {
-            this.ftpsConnection.sendCommand(command);
             returnCode = String.valueOf(this.ftpsConnection.sendCommand(command));
         } catch (IOException e) {
             log.error("Error running command: '" + command + "'", e);

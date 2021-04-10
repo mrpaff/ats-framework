@@ -15,6 +15,7 @@
  */
 package com.axway.ats.core.process.model;
 
+import java.util.Map;
 public interface IProcessExecutor {
 
     /**
@@ -107,14 +108,14 @@ public interface IProcessExecutor {
                                     String errorOutputFile );
 
     /**
-     * Log output to corresponding log4j appenders
-     * @param logErrorOutput
+     * Log output to corresponding log4j2 appenders
+     * @param logStandardOutput
      */
     public void setLogStandardOutput(
                                       boolean logStandardOutput );
 
     /**
-     * Log error to corresponding log4j appenders
+     * Log error to corresponding log4j2 appenders
      * @param logErrorOutput
      */
     public void setLogErrorOutput(
@@ -123,9 +124,22 @@ public interface IProcessExecutor {
     public void setWorkDirectory(
                                   String workDirectory );
 
-    public void setEnvVariable(
+    /**
+     * Sets value to provided environment variable name
+     * @param variableName the name of the environment variable. Upper case is preferred but naming depends on the underlying OS support
+     * @param variableValue value of the environment variable
+     * @return old value if variable already existed
+     */
+    public String setEnvVariable(
                                 String variableName,
                                 String variableValue );
+
+    /**
+     * Removes environment variable. Support depends on the JVM and OS used
+     * @param variableName the name of the environment variable. Upper case is preferred but naming depends on the underlying OS support
+     * @return old value if variable already existed
+     */
+    public String removeEnvVariable( String variableName );
 
     public void appendToEnvVariable(
                                      String variableName,
@@ -133,4 +147,6 @@ public interface IProcessExecutor {
 
     public String getEnvVariable(
                                   String variableName );
+
+    public Map<String,String> getEnvVariables();
 }

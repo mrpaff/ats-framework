@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -172,11 +172,57 @@ public class Test_FileSystemOperations extends BaseTest {
         // setup expectations
         expectNew(RemoteFileSystemOperations.class, REMOTE_HOST_NAME_VALID).andReturn(remoteFSOperationsMock);
         remoteFSOperationsMock.copyFile(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID, true);
+        remoteFSOperationsMock.setCopyInPassiveMode( false );
 
         replayAll();
 
         // execute operation
         fileSystemOperationsRemote.copyFileTo(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID);
+
+        // verify results
+        verifyAll();
+    }
+
+    /**
+     * Copy file from to remote agent running in container. AKA Docker / passive mode
+     * @throws Exception - mock library exceptions
+     */
+    @Test
+    public void testFileCopy_RemoteIsInContainer() throws Exception {
+
+        // setup expectations
+        expectNew(RemoteFileSystemOperations.class, REMOTE_HOST_NAME_VALID).andReturn(remoteFSOperationsMock);
+        // remoteFSOperationsMock.setCopyInPassiveMode( true );
+        remoteFSOperationsMock.copyFile(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID, true);
+        remoteFSOperationsMock.setCopyInPassiveMode( true );
+
+        replayAll();
+
+        // execute operation
+        fileSystemOperationsRemote.setCopyInPassiveMode( true);
+        fileSystemOperationsRemote.copyFileTo(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID);
+
+        // verify results
+        verifyAll();
+    }
+
+    /**
+     * Copy file from remote (ATS agent) to the local host
+     * @throws Exception
+     */
+    @Test
+    public void testFileCopyFromRemoteAgent() throws Exception {
+
+        // setup expectations
+        expectNew(RemoteFileSystemOperations.class, REMOTE_HOST_NAME_VALID).andReturn(remoteFSOperationsMock);
+        remoteFSOperationsMock.copyFileFrom(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID, true);
+        //remoteFSOperationsMock.setCopyInPassiveMode( true );
+
+        replayAll();
+
+        // execute operation
+        //fileSystemOperationsRemote.setCopyInPassiveMode( true );
+        fileSystemOperationsRemote.copyFileFrom(SOURCE_FILE_NAME_VALID, DESTINATION_FILE_NAME_VALID);
 
         // verify results
         verifyAll();
@@ -248,6 +294,8 @@ public class Test_FileSystemOperations extends BaseTest {
 
         // setup expectations
         expectNew(LocalFileSystemOperations.class).andReturn(localFSOperationsMock);
+        expectNew(LocalFileSystemOperations.class).andReturn(localFSOperationsMock);
+        expect(localFSOperationsMock.doesFileExist(SOURCE_FILE_NAME_VALID)).andReturn(true);
         localFSOperationsMock.deleteFile(SOURCE_FILE_NAME_VALID);
 
         replayAll();
@@ -279,6 +327,8 @@ public class Test_FileSystemOperations extends BaseTest {
 
         // setup expectations
         expectNew(RemoteFileSystemOperations.class, REMOTE_HOST_NAME_VALID).andReturn(remoteFSOperationsMock);
+        expectNew(RemoteFileSystemOperations.class, REMOTE_HOST_NAME_VALID).andReturn(remoteFSOperationsMock);
+        expect(remoteFSOperationsMock.doesFileExist(DESTINATION_FILE_NAME_VALID)).andReturn(true);
         remoteFSOperationsMock.deleteFile(DESTINATION_FILE_NAME_VALID);
 
         replayAll();

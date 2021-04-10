@@ -1,5 +1,5 @@
 /*
- * Copyright 2017 Axway Software
+ * Copyright 2017-2020 Axway Software
  * 
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -22,7 +22,8 @@ import java.util.List;
 
 import javax.xml.parsers.DocumentBuilderFactory;
 
-import org.apache.log4j.Logger;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.apache.xml.serialize.OutputFormat;
 import org.apache.xml.serialize.XMLSerializer;
 import org.w3c.dom.Document;
@@ -43,7 +44,7 @@ import com.axway.ats.core.utils.StringUtils;
  */
 class DatabaseSnapshotBackupUtils {
 
-    private static Logger log = Logger.getLogger(DatabaseSnapshotBackupUtils.class);
+    private static Logger log = LogManager.getLogger(DatabaseSnapshotBackupUtils.class);
 
     /**
      * Save a snapshot into a file
@@ -109,7 +110,7 @@ class DatabaseSnapshotBackupUtils {
                                                              snapshot.skipRowsPerTable, null, null);
             for (String values : valuesList) {
                 Element rowNode = doc.createElement(DatabaseSnapshotUtils.NODE_ROW);
-                rowNode.setTextContent(values);
+                rowNode.setTextContent(StringUtils.escapeNonPrintableAsciiCharacters(values));
 
                 tableNode.appendChild(rowNode);
             }
@@ -180,7 +181,7 @@ class DatabaseSnapshotBackupUtils {
             doc.getDocumentElement().normalize();
         } catch (Exception e) {
             throw new DatabaseSnapshotException("Error reading database snapshot backup file "
-                                                + sourceFile);
+                                                + sourceFile, e);
         }
 
         Element databaseNode = doc.getDocumentElement();
